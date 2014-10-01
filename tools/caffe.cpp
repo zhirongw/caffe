@@ -18,6 +18,8 @@ using caffe::vector;
 
 DEFINE_int32(gpu, -1,
     "Run in GPU mode on given device ID.");
+DEFINE_int32(slave_gpu, -1,
+    "Run in SLAVE_GPU mode on given device ID.");
 DEFINE_string(solver, "",
     "The solver definition protocol buffer text file.");
 DEFINE_string(model, "",
@@ -92,6 +94,7 @@ int train() {
   if (FLAGS_gpu < 0
       && solver_param.solver_mode() == caffe::SolverParameter_SolverMode_GPU) {
     FLAGS_gpu = solver_param.device_id();
+    FLAGS_slave_gpu = solver_param.slave_device_id();
   }
 
   // Set device id and mode
@@ -99,6 +102,14 @@ int train() {
     LOG(INFO) << "Use GPU with device ID " << FLAGS_gpu;
     Caffe::SetDevice(FLAGS_gpu);
     Caffe::set_mode(Caffe::GPU);
+    Caffe::set_gpu_mode(Caffe::SINGLE);
+    if (FLAGS_slave_gpu >= 0) {
+      LOG(INFO) << "use SLAVE GPU with device ID " << FLAGS_slave_gpu;
+      Caffe::set_gpu_mode(Caffe::MASTER_SLAVE);
+      Caffe::SetSlaveDevice(FLAGS_slave_gpu);
+      Caffe::ConnectMasterSlaveDevice(FLAGS_gpu, FLAGS_slave_gpu);
+    }
+    Caffe::switch_to_master_device();
   } else {
     LOG(INFO) << "Use CPU.";
     Caffe::set_mode(Caffe::CPU);

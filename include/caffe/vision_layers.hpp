@@ -109,6 +109,14 @@ class ConvolutionLayer : public Layer<Dtype> {
   int N_;
   Blob<Dtype> col_buffer_;
   Blob<Dtype> bias_multiplier_;
+  // Added for allowing multi-gpu  
+  vector<shared_ptr<Blob<Dtype> > > slave_top_;
+  vector<shared_ptr<Blob<Dtype> > > slave_bottom_;
+  shared_ptr<Blob<Dtype> > slave_weight_;
+  shared_ptr<Blob<Dtype> > slave_bias_;
+  shared_ptr<Blob<Dtype> > temp_weight_;
+  shared_ptr<Blob<Dtype> > temp_bias_;
+  
 };
 
 #ifdef USE_CUDNN
@@ -144,12 +152,19 @@ class CuDNNConvolutionLayer : public ConvolutionLayer<Dtype> {
       const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom);
 
   cudnnHandle_t* handle_;
-  cudaStream_t*  stream_;
+  cudaStream_t* stream_;
   vector<cudnnTensor4dDescriptor_t> bottom_descs_, top_descs_;
   cudnnTensor4dDescriptor_t    bias_desc_;
   cudnnFilterDescriptor_t      filter_desc_;
   vector<cudnnConvolutionDescriptor_t> conv_descs_;
   int bottom_offset_, top_offset_, weight_offset_, bias_offset_;
+  // for slave
+  cudnnHandle_t* slave_handle_;
+  cudaStream_t* slave_stream_;
+  // vector<cudnnTensor4dDescriptor_t> slave_bottom_descs_, slave_top_descs_;
+  // cudnnTensor4dDescriptor_t    slave_bias_desc_;
+  // cudnnFilterDescriptor_t      slave_filter_desc_;
+  // vector<cudnnConvolutionDescriptor_t> slave_conv_descs_;
 };
 #endif
 

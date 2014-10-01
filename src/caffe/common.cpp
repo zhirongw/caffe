@@ -83,8 +83,11 @@ void* Caffe::RNG::generator() {
 #else  // Normal GPU + CPU Caffe.
 
 Caffe::Caffe()
-    : cublas_handle_(NULL), curand_generator_(NULL), random_generator_(),
-    mode_(Caffe::CPU), phase_(Caffe::TRAIN) {
+    : curand_generator_(NULL), cu_stream_(NULL), slave_curand_generator_(NULL),
+    slave_cu_stream_(NULL), cublas_handle_(NULL), slave_cublas_handle_(NULL),
+    slave_random_generator_(), random_generator_(), accumulate_(false), 
+    mode_(Caffe::CPU), phase_(Caffe::TRAIN), gpu_mode_(Caffe::SINGLE),
+    master_device_id_(0), slave_device_id_(-1), current_device_id_(0) {
   // Try to create a cublas handler, and report an error if failed (but we will
   // keep the program running as one might just want to run CPU code).
   if (cublasCreate(&cublas_handle_) != CUBLAS_STATUS_SUCCESS) {
@@ -142,6 +145,33 @@ void Caffe::SetDevice(const int device_id) {
       CURAND_RNG_PSEUDO_DEFAULT));
   CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(Get().curand_generator_,
       cluster_seedgen()));
+  CUDA_CHECK(cudaStreamCreate (&Get().cu_stream_));
+  Get().master_device_id_ = device_id;
+  Caffe::set_gpu_mode(Caffe::SINGLE);
+}
+
+void Caffe::SetSlaveDevice(const int slave_device_id) {
+  int current_device;
+  CUDA_CHECK(cudaGetDevice(&current_device));
+  if (current_device == slave_device_id) {
+    return;
+  }
+  // The call to cudaSetDevice must come before any calls to Get, which
+  // may perform initialization using the GPU.
+  CUDA_CHECK(cudaSetDevice(slave_device_id));
+  if (Get().slave_cublas_handle_) CUBLAS_CHECK(cublasDestroy(Get().slave_cublas_handle_));
+  if (Get().slave_curand_generator_) {
+    CURAND_CHECK(curandDestroyGenerator(Get().slave_curand_generator_));
+  }
+  CUDA_CHECK(cudaStreamCreate (&Get().slave_cu_stream_));
+  CUBLAS_CHECK(cublasCreate(&Get().slave_cublas_handle_));
+  CURAND_CHECK(curandCreateGenerator(&Get().slave_curand_generator_,
+      CURAND_RNG_PSEUDO_DEFAULT));
+  CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(Get().slave_curand_generator_,
+      cluster_seedgen()));
+  Get().slave_device_id_ = slave_device_id;
+  CUDA_CHECK(cudaSetDevice(current_device));
+  Caffe::set_gpu_mode(Caffe::MASTER_SLAVE);
 }
 
 void Caffe::DeviceQuery() {
@@ -179,6 +209,70 @@ void Caffe::DeviceQuery() {
   return;
 }
 
+void Caffe::SlaveDeviceQuery(const int slave_device_id) {
+  cudaDeviceProp prop;
+  int device = slave_device_id;
+  /* if (cudaSuccess != cudaGetDevice(&device)) {
+    printf("No cuda device present.\n");
+    return;
+  }*/
+  CUDA_CHECK(cudaGetDeviceProperties(&prop, device));
+  LOG(INFO) << "Device id:                     " << device;
+  LOG(INFO) << "Major revision number:         " << prop.major;
+  LOG(INFO) << "Minor revision number:         " << prop.minor;
+  LOG(INFO) << "Name:                          " << prop.name;
+  LOG(INFO) << "Total global memory:           " << prop.totalGlobalMem;
+  LOG(INFO) << "Total shared memory per block: " << prop.sharedMemPerBlock;
+  LOG(INFO) << "Total registers per block:     " << prop.regsPerBlock;
+  LOG(INFO) << "Warp size:                     " << prop.warpSize;
+  LOG(INFO) << "Maximum memory pitch:          " << prop.memPitch;
+  LOG(INFO) << "Maximum threads per block:     " << prop.maxThreadsPerBlock;
+  LOG(INFO) << "Maximum dimension of block:    "
+      << prop.maxThreadsDim[0] << ", " << prop.maxThreadsDim[1] << ", "
+      << prop.maxThreadsDim[2];
+  LOG(INFO) << "Maximum dimension of grid:     "
+      << prop.maxGridSize[0] << ", " << prop.maxGridSize[1] << ", "
+      << prop.maxGridSize[2];
+  LOG(INFO) << "Clock rate:                    " << prop.clockRate;
+  LOG(INFO) << "Total constant memory:         " << prop.totalConstMem;
+  LOG(INFO) << "Texture alignment:             " << prop.textureAlignment;
+  LOG(INFO) << "Concurrent copy and execution: "
+      << (prop.deviceOverlap ? "Yes" : "No");
+  LOG(INFO) << "Number of multiprocessors:     " << prop.multiProcessorCount;
+  LOG(INFO) << "Kernel execution timeout:      "
+      << (prop.kernelExecTimeoutEnabled ? "Yes" : "No");
+  return;
+}
+
+void Caffe::ConnectMasterSlaveDevice(const int master_device_id, const int slave_device_id) {
+  int can_access;
+  int target_device_id;
+  target_device_id = slave_device_id;
+
+  CUDA_CHECK(cudaDeviceCanAccessPeer(&can_access, master_device_id, slave_device_id));
+  if (can_access == 0) {
+    LOG(WARNING) << "Device P2P access from GPU " << master_device_id << " to GPU " <<slave_device_id
+                 << " can not be enabled. Data transfering may be slow.";
+  } else {
+    CUDA_CHECK(cudaSetDevice(master_device_id));
+    CUDA_CHECK(cudaDeviceEnablePeerAccess(target_device_id, 0));
+    LOG(INFO) << "Device P2P access from GPU " << master_device_id << " to GPU "
+              << slave_device_id <<" enabled.";
+  }
+ 
+  CUDA_CHECK(cudaDeviceCanAccessPeer(&can_access, slave_device_id, master_device_id ));
+ 
+  if (can_access == 0) {
+    LOG(WARNING) << "Device P2P access from GPU " << slave_device_id << " to GPU " << master_device_id
+                 << " can not be enabled. Data transfering may be slow.";
+  } else {
+    CUDA_CHECK(cudaSetDevice(slave_device_id));
+    CUDA_CHECK(cudaDeviceEnablePeerAccess(master_device_id, 0));
+    LOG(INFO)<<"Device P2P access from GPU " << slave_device_id << " to GPU "
+             <<master_device_id << " enabled.";
+  }
+  CUDA_CHECK(cudaSetDevice(master_device_id));
+}
 
 class Caffe::RNG::Generator {
  public:

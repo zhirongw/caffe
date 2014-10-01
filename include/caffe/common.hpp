@@ -78,7 +78,10 @@ class Caffe {
   }
   enum Brew { CPU, GPU };
   enum Phase { TRAIN, TEST };
-
+  enum GPU_MODE { SINGLE, MASTER_SLAVE, PARALLEL};
+  // NOTE by zhirong: All the master and slave configuration and functions are provided
+  // only for cublas. For cudnn, we add additional code over there. This is to keep the
+  // cleaness the caffe main code.
 
   // This random number generator facade hides boost and CUDA rng
   // implementation from one another (for cross-platform compatibility).
@@ -103,15 +106,69 @@ class Caffe {
   }
 #ifndef CPU_ONLY
   inline static cublasHandle_t cublas_handle() { return Get().cublas_handle_; }
+  inline static cublasHandle_t slave_cublas_handle() { return Get().slave_cublas_handle_; }
   inline static curandGenerator_t curand_generator() {
     return Get().curand_generator_;
   }
+  inline static curandGenerator_t slave_curand_generator() {
+    return Get().slave_curand_generator_;
+  }
+  inline static cudaStream_t cu_stream() { return Get().cu_stream_; }
+  inline static cudaStream_t slave_cu_stream() { return Get().slave_cu_stream_; }
+  
+  inline static int master_device_id() { return Get().master_device_id_; }
+  inline static int slave_device_id() { return Get().slave_device_id_; }
+
+  // switch between master and slave device
+  inline static void switch_to_master_device() {
+    Get().current_device_id_ = Get().master_device_id_;
+    CUDA_CHECK(cudaSetDevice(Get().master_device_id_));
+  }
+  inline static void switch_to_slave_device() {
+    Get().current_device_id_ = Get().slave_device_id_;
+    CUDA_CHECK(cudaSetDevice(Get().slave_device_id_));
+  }
+  // get device info
+  inline static int get_current_device_id() { return Get().current_device_id_; }
+  inline static cublasHandle_t get_current_cublas_handle() {
+    if(Get().gpu_mode_ == MASTER_SLAVE && Get().current_device_id_ == Get().master_device_id_)
+      return Get().cublas_handle_;
+    else if(Get().gpu_mode_ == MASTER_SLAVE && Get().current_device_id_ == Get().slave_device_id_)
+      return Get().slave_cublas_handle_; 
+    else { // TODO: error handling
+      LOG(FATAL) << "MASTER & SLAVE device not set properly";
+      return NULL;
+    }
+  }
+  inline static curandGenerator_t get_current_curand_generator() {
+    if(Get().gpu_mode_ == MASTER_SLAVE && Get().current_device_id_ == Get().master_device_id_)
+      return Get().curand_generator_;
+    else if(Get().gpu_mode_ == MASTER_SLAVE && Get().current_device_id_ == Get().slave_device_id_)
+      return Get().slave_curand_generator_;
+    else { // TODO: error handling
+      LOG(FATAL) << "MASTER & SLAVE device not set properly";
+      return NULL;
+    }
+  }
+  inline static cudaStream_t get_current_cu_stream() {
+    if(Get().gpu_mode_ == MASTER_SLAVE && Get().current_device_id_ == Get().master_device_id_)
+      return Get().cu_stream_;
+    else if(Get().gpu_mode_ == MASTER_SLAVE && Get().current_device_id_ == Get().slave_device_id_)
+      return Get().slave_cu_stream_;
+    else { // TOD: error handling
+      LOG(FATAL) << "MASTER & SLAVE device not set properly";
+      return NULL;
+    }
+  }
+
 #endif
 
   // Returns the mode: running on CPU or GPU.
   inline static Brew mode() { return Get().mode_; }
   // Returns the phase: TRAIN or TEST.
   inline static Phase phase() { return Get().phase_; }
+  // Returns the GPU mode:
+  inline static GPU_MODE gpu_mode() { return Get().gpu_mode_; }
   // The setters for the variables
   // Sets the mode. It is recommended that you don't change the mode halfway
   // into the program since that may cause allocation of pinned memory being
@@ -120,27 +177,43 @@ class Caffe {
   inline static void set_mode(Brew mode) { Get().mode_ = mode; }
   // Sets the phase.
   inline static void set_phase(Phase phase) { Get().phase_ = phase; }
+  // Sets the GPU mode
+  inline static void set_gpu_mode(GPU_MODE gpu_mode) { Get().gpu_mode_ = gpu_mode; }
   // Sets the random seed of both boost and curand
   static void set_random_seed(const unsigned int seed);
   // Sets the device. Since we have cublas and curand stuff, set device also
   // requires us to reset those values.
   static void SetDevice(const int device_id);
+  static void SetSlaveDevice(const int slave_device_id);
   // Prints the current GPU status.
   static void DeviceQuery();
+  static void SlaveDeviceQuery(const int slave_device_id);
+
+  static void ConnectMasterSlaveDevice(const int master_device_id, const int slave_device_id);
   // added for allowing bigger batch size
   inline static void set_accumulate(bool acum) { Get().accumulate_ = acum; }
   inline static bool accumulate() { return Get().accumulate_; }
 
  protected:
 #ifndef CPU_ONLY
-  cublasHandle_t cublas_handle_;
   curandGenerator_t curand_generator_;
+  cudaStream_t cu_stream_;
+  curandGenerator_t slave_curand_generator_;
+  cudaStream_t slave_cu_stream_;
+  cublasHandle_t cublas_handle_;
+  cublasHandle_t slave_cublas_handle_;
+  shared_ptr<RNG> slave_random_generator_; 
 #endif
   shared_ptr<RNG> random_generator_;
   // added for allowing bigger batch size
   bool accumulate_;
   Brew mode_;
   Phase phase_;
+  GPU_MODE gpu_mode_;
+
+  int master_device_id_;
+  int slave_device_id_;
+  int current_device_id_;
   static shared_ptr<Caffe> singleton_;
 
  private:

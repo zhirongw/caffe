@@ -21,6 +21,7 @@ template <typename Dtype>
 void CuDNNConvolutionLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
   ConvolutionLayer<Dtype>::LayerSetUp(bottom, top);
+  bool MULTIGPU = Caffe::gpu_mode() == Caffe::MASTER_SLAVE;
   // Initialize CUDA streams and cuDNN.
   stream_         = new cudaStream_t[this->group_ * CUDNN_STREAMS_PER_GROUP];
   handle_         = new cudnnHandle_t[this->group_ * CUDNN_STREAMS_PER_GROUP];
@@ -58,6 +59,48 @@ void CuDNNConvolutionLayer<Dtype>::LayerSetUp(
   if (this->bias_term_) {
     cudnn::createTensor4dDesc<Dtype>(&bias_desc_);
   }
+  if(MULTIGPU){
+    this->slave_weight_.reset(new Blob<Dtype>(
+        this->num_output_, this->channels_ / this->group_,
+        this->kernel_h_, this->kernel_w_));
+    this->slave_bias_.reset(new Blob<Dtype>(1,1,1,this->num_output_));
+    this->temp_weight_.reset(new Blob<Dtype>(
+        this->num_output_, this->channels_ / this->group_,
+        this->kernel_h_, this->kernel_w_));
+    this->temp_bias_.reset(new Blob<Dtype>(1,1,1,this->num_output_));
+ 
+    Caffe::switch_to_slave_device();
+    slave_stream_  = new cudaStream_t[this->group_ * CUDNN_STREAMS_PER_GROUP];
+    slave_handle_  = new cudnnHandle_t[this->group_ * CUDNN_STREAMS_PER_GROUP];
+    for (int g = 0; g < this->group_ * CUDNN_STREAMS_PER_GROUP; g++) {
+      CUDA_CHECK(cudaStreamCreate(&slave_stream_[g]));
+      CUDNN_CHECK(cudnnCreate(&slave_handle_[g]));
+      CUDNN_CHECK(cudnnSetStream(slave_handle_[g], slave_stream_[g]));
+    }
+    /*
+    // Create filter descriptor.
+    cudnn::createFilterDesc<Dtype>(&slave_filter_desc_,
+        this->num_output_ / this->group_, this->channels_ / this->group_,
+        this->kernel_h_, this->kernel_w_);
+    // Create tensor descriptor(s) for data and corresponding convolution(s).
+    for (int i = 0; i < bottom.size(); i++) {
+      cudnnTensor4dDescriptor_t slave_bottom_desc;
+      cudnn::createTensor4dDesc<Dtype>(&slave_bottom_desc);
+      bottom_descs_.push_back(slave_bottom_desc);
+      cudnnTensor4dDescriptor_t slave_top_desc;
+      cudnn::createTensor4dDesc<Dtype>(&slave_top_desc);
+      top_descs_.push_back(slave_top_desc);
+      cudnnConvolutionDescriptor_t slave_conv_desc;
+      cudnn::createConvolutionDesc<Dtype>(&slave_conv_desc);
+      conv_descs_.push_back(slave_conv_desc);
+    }
+    // Tensor descriptor for bias.
+    if (this->bias_term_) {
+      cudnn::createTensor4dDesc<Dtype>(&slave_bias_desc_);
+    }
+    */
+    Caffe::switch_to_master_device();
+  }
 }
 
 template <typename Dtype>
@@ -68,17 +111,33 @@ void CuDNNConvolutionLayer<Dtype>::Reshape(
       * this->height_ * this->width_;
   top_offset_ = (this->num_output_ / this->group_)
       * this->height_out_ * this->width_out_;
-
+  bool MULTIGPU = Caffe::gpu_mode() == Caffe::MASTER_SLAVE;
+  int split_num = this->num_;
+  if(MULTIGPU) {
+    split_num /= 2;
+    CHECK_EQ(split_num * 2, this->num_)
+       << "batch size needs to be even";
+    // Caffe::switch_to_slave_device();
+    this->slave_bottom_.resize(bottom.size());
+    this->slave_top_.resize((*top).size());
+    for(int i = 0; i < bottom.size(); i++) {
+      (this->slave_bottom_)[i].reset(new Blob<Dtype>(split_num, this->channels_, this->height_, this->width_));
+    }
+    for(int i = 0; i < (*top).size(); i++){
+      (this->slave_top_)[i].reset(new Blob<Dtype>(split_num, this->num_output_, this->height_out_, this->width_out_));
+    }
+    // Caffe::switch_to_master_device();
+  }
   for (int i = 0; i < bottom.size(); i++) {
     cudnn::setTensor4dDesc<Dtype>(&bottom_descs_[i],
-        this->num_,
+        split_num,
         this->channels_ / this->group_,
         this->height_, this->width_,
         this->channels_ * this->height_ * this->width_,
         this->height_ * this->width_,
         this->width_, 1);
     cudnn::setTensor4dDesc<Dtype>(&top_descs_[i],
-        this->num_,
+        split_num,
         this->num_output_ / this->group_,
         this->height_out_, this->width_out_,
         this->num_output_ * this->height_out_ * this->width_out_,
@@ -115,6 +174,27 @@ CuDNNConvolutionLayer<Dtype>::~CuDNNConvolutionLayer() {
 
   delete [] stream_;
   delete [] handle_;
+  // for slave
+  Caffe::switch_to_slave_device();
+  /*
+  for (int i = 0; i < bottom_descs_.size(); i++) {
+    cudnnDestroyTensor4dDescriptor(slave_bottom_descs_[i]);
+    cudnnDestroyTensor4dDescriptor(slave_top_descs_[i]);
+    cudnnDestroyConvolutionDescriptor(slave_conv_descs_[i]);
+  }
+  if (this->bias_term_) {
+    cudnnDestroyTensor4dDescriptor(slave_bias_desc_);
+  }
+  cudnnDestroyFilterDescriptor(slave_filter_desc_);
+  */
+  for (int g = 0; g < this->group_ * CUDNN_STREAMS_PER_GROUP; g++) {
+    cudaStreamDestroy(slave_stream_[g]);
+    cudnnDestroy(slave_handle_[g]);
+  }
+
+  delete [] slave_stream_;
+  delete [] slave_handle_;
+  Caffe::switch_to_master_device();
 }
 
 INSTANTIATE_CLASS(CuDNNConvolutionLayer);
