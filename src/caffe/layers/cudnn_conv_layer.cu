@@ -123,6 +123,7 @@ void CuDNNConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   Dtype* slave_bias_data = NULL;
   Dtype* slave_bias_diff = NULL;
   if(MULTIGPU) {
+    CUDA_CHECK(cudaDeviceSynchronize());
     Caffe::switch_to_slave_device();
     if (this->param_propagate_down_[0]) {
       slave_weight_data = this->slave_weight_->mutable_gpu_data();
@@ -142,19 +143,15 @@ void CuDNNConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           Caffe::slave_device_id(), bias, Caffe::master_device_id(),
           this->blobs_[1]->count() * sizeof(Dtype), *stream_));
     }
-    // copy weight
-    CUDA_CHECK(cudaMemcpyPeerAsync(slave_weight_data, 
-        Caffe::slave_device_id(), weight, Caffe::master_device_id(),
-        this->blobs_[0]->count() * sizeof(Dtype), *stream_));
     Caffe::switch_to_master_device();
   }
   for (int i = 0; i < top.size(); ++i) {
     const Dtype* top_diff = top[i]->gpu_diff();
     Dtype* slave_top_diff = NULL;
-    // copy top diff
     if (MULTIGPU) {
       Caffe::switch_to_slave_device();
       slave_top_diff = (this->slave_top_)[i]->mutable_gpu_diff();
+      // copy top diff
       CUDA_CHECK(cudaMemcpyPeerAsync(slave_top_diff,
           Caffe::slave_device_id(), top_diff + top[i]->count() / 2, Caffe::master_device_id(),
           top[i]->count() * sizeof(Dtype) / 2, *stream_));
@@ -182,10 +179,10 @@ void CuDNNConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       if (this->param_propagate_down_[0]) {
         const Dtype* bottom_data = (*bottom)[i]->gpu_data();
         Dtype* slave_bottom_data = NULL;
-        // copy bottom data
         if (MULTIGPU) {
           Caffe::switch_to_slave_device();
-          Dtype* slave_bottom_data = (this->slave_bottom_)[i]->mutable_gpu_data();
+        // copy bottom data
+          slave_bottom_data = (this->slave_bottom_)[i]->mutable_gpu_data();
           CUDA_CHECK(cudaMemcpyPeerAsync(slave_bottom_data, 
               Caffe::slave_device_id(), bottom_data + (*bottom)[i]->count() / 2, Caffe::master_device_id(),
               (*bottom)[i]->count() * sizeof(Dtype) / 2, *stream_));
@@ -216,7 +213,7 @@ void CuDNNConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         Dtype* slave_bottom_diff = NULL;
         if (MULTIGPU) {
           Caffe::switch_to_slave_device();
-          Dtype* slave_bottom_diff = (this->slave_bottom_)[i]->mutable_gpu_diff();
+          slave_bottom_diff = (this->slave_bottom_)[i]->mutable_gpu_diff();
           Caffe::switch_to_master_device();
         }
         CUDNN_CHECK(cudnnConvolutionBackwardData(handle_[2*this->group_ + g],
@@ -228,7 +225,7 @@ void CuDNNConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
         if (MULTIGPU) {
           Caffe::switch_to_slave_device();
           CUDNN_CHECK(cudnnConvolutionBackwardData(slave_handle_[2*this->group_ + g],
-            filter_desc_, slave_weight_diff + weight_offset_ * g,
+            filter_desc_, slave_weight_data + weight_offset_ * g,
             top_descs_[i],    slave_top_diff + top_offset_ * g,
             conv_descs_[i],
             bottom_descs_[i], slave_bottom_diff + bottom_offset_ * g,
@@ -239,10 +236,12 @@ void CuDNNConvolutionLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       // copy back the bottom diff
       if (propagate_down[i] && MULTIGPU) {
         Dtype* bottom_diff = (*bottom)[i]->mutable_gpu_diff();
+        Caffe::switch_to_slave_device();
         const Dtype* slave_bottom_diff = (this->slave_bottom_)[i]->gpu_diff();
         CUDA_CHECK(cudaMemcpyPeerAsync(bottom_diff + (*bottom)[i]->count() / 2, 
             Caffe::master_device_id(), slave_bottom_diff, Caffe::slave_device_id(),
             (*bottom)[i]->count() * sizeof(Dtype) / 2, *slave_stream_)); 
+        Caffe::switch_to_master_device();
       }
     }
     

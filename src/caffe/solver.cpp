@@ -195,8 +195,9 @@ void Solver<Dtype>::Solve(const char* resume_file) {
 
     // added for allowing bigger batch size
     Dtype loss = 0;
-    if ( !Caffe::accumulate() )
+    if ( !Caffe::accumulate() ) {
       loss = net_->ForwardBackward(bottom_vec);
+    }
     else{
       for (int acum_num = 0; acum_num < param_.update_interval() - 1; ++acum_num){
         loss += net_->ForwardBackward(bottom_vec);

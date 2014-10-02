@@ -68,7 +68,16 @@ void CuDNNConvolutionLayer<Dtype>::LayerSetUp(
         this->num_output_, this->channels_ / this->group_,
         this->kernel_h_, this->kernel_w_));
     this->temp_bias_.reset(new Blob<Dtype>(1,1,1,this->num_output_));
- 
+
+    this->slave_bottom_.resize(bottom.size());
+    this->slave_top_.resize((*top).size());
+    for(int i = 0; i < bottom.size(); i++) {
+      (this->slave_bottom_)[i].reset(new Blob<Dtype>());
+    }
+    for(int i = 0; i < (*top).size(); i++){
+      (this->slave_top_)[i].reset(new Blob<Dtype>());
+    }
+
     Caffe::switch_to_slave_device();
     slave_stream_  = new cudaStream_t[this->group_ * CUDNN_STREAMS_PER_GROUP];
     slave_handle_  = new cudnnHandle_t[this->group_ * CUDNN_STREAMS_PER_GROUP];
@@ -121,10 +130,10 @@ void CuDNNConvolutionLayer<Dtype>::Reshape(
     this->slave_bottom_.resize(bottom.size());
     this->slave_top_.resize((*top).size());
     for(int i = 0; i < bottom.size(); i++) {
-      (this->slave_bottom_)[i].reset(new Blob<Dtype>(split_num, this->channels_, this->height_, this->width_));
+      (this->slave_bottom_)[i]->Reshape(split_num, this->channels_, this->height_, this->width_);
     }
     for(int i = 0; i < (*top).size(); i++){
-      (this->slave_top_)[i].reset(new Blob<Dtype>(split_num, this->num_output_, this->height_out_, this->width_out_));
+      (this->slave_top_)[i]->Reshape(split_num, this->num_output_, this->height_out_, this->width_out_);
     }
     // Caffe::switch_to_master_device();
   }
