@@ -23,3 +23,5 @@ snapshot: 5000
 snapshot_prefix: "examples/mnist/lenet"
 # solver mode: CPU or GPU
 solver_mode: GPU
+device_id: 1
+slave_device_id: 2

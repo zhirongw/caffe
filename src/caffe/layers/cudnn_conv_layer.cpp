@@ -184,7 +184,9 @@ CuDNNConvolutionLayer<Dtype>::~CuDNNConvolutionLayer() {
   delete [] stream_;
   delete [] handle_;
   // for slave
-  Caffe::switch_to_slave_device();
+  bool MULTIGPU = Caffe::gpu_mode() == Caffe::MASTER_SLAVE;
+  if (MULTIGPU) {
+    Caffe::switch_to_slave_device();
   /*
   for (int i = 0; i < bottom_descs_.size(); i++) {
     cudnnDestroyTensor4dDescriptor(slave_bottom_descs_[i]);
@@ -196,14 +198,15 @@ CuDNNConvolutionLayer<Dtype>::~CuDNNConvolutionLayer() {
   }
   cudnnDestroyFilterDescriptor(slave_filter_desc_);
   */
-  for (int g = 0; g < this->group_ * CUDNN_STREAMS_PER_GROUP; g++) {
-    cudaStreamDestroy(slave_stream_[g]);
-    cudnnDestroy(slave_handle_[g]);
-  }
+    for (int g = 0; g < this->group_ * CUDNN_STREAMS_PER_GROUP; g++) {
+      cudaStreamDestroy(slave_stream_[g]);
+      cudnnDestroy(slave_handle_[g]);
+    }
 
-  delete [] slave_stream_;
-  delete [] slave_handle_;
-  Caffe::switch_to_master_device();
+    delete [] slave_stream_;
+    delete [] slave_handle_;
+    Caffe::switch_to_master_device();
+  }
 }
 
 INSTANTIATE_CLASS(CuDNNConvolutionLayer);
