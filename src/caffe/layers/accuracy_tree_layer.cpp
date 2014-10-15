@@ -66,8 +66,8 @@ void AccuracyTreeLayer<Dtype>::Reshape(
   const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
   // CHECK_EQ(bottom[0]->num(), bottom[1]->num())
   //    << "The data and label should have the same number.";
-  CHECK_LE(top_k_, bottom[num_nodes_]->count() / bottom[num_nodes_]->num())
-      << "top_k must be less than or equal to the number of classes.";
+  // CHECK_LE(top_k_, bottom[num_nodes_]->count() / bottom[num_nodes_]->num())
+  //    << "top_k must be less than or equal to the number of classes.";
   CHECK_EQ(bottom[num_nodes_]->channels(), 1);
   CHECK_EQ(bottom[num_nodes_]->height(), 1);
   CHECK_EQ(bottom[num_nodes_]->width(), 1);
