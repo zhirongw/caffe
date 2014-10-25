@@ -33,14 +33,18 @@ void AccuracyTreeLayer<Dtype>::LayerSetUp(
   for (int t = 0; t < num_nodes_; ++t) {
     std::ifstream trans_file(tree_param.label_transform_file(t).c_str());
     CHECK(trans_file.is_open());
-    int label_to;
-    set<int> to;
     new_labels_[t].clear();
-    while (trans_file >> label_to) {
-      new_labels_[t].push_back(label_to);
-      if (label_to >= 0) {
+    int label_to;
+    int multilabel;
+    set<int> to;
+    while (trans_file >> multilabel) {
+      vector<int> elem_labels;
+      for (int rcount = 0; rcount < multilabel; rcount++) {
+        CHECK(trans_file >> label_to);
         to.insert(label_to);
-      }
+        elem_labels.push_back(label_to);
+      } 
+      new_labels_[t].push_back(elem_labels);
     }
     trans_file.close();
     num_classes_.push_back(to.size());
@@ -89,7 +93,7 @@ void AccuracyTreeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     // first get the accuracy of the top depth-1 layers
     while (depth_level < tree_depth_) {
       int raw_label = static_cast<int>(bottom_label[i]);
-      int this_label = new_labels_[node_idx][raw_label]; 
+      vector<int> this_label = new_labels_[node_idx][raw_label]; 
       int dim = num_classes_[node_idx];
       const Dtype* bottom_data = bottom[node_idx]->cpu_data();
 
@@ -105,21 +109,24 @@ void AccuracyTreeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
           bottom_data_vector.begin(), bottom_data_vector.begin() + this_top_k,
           bottom_data_vector.end(), std::greater<std::pair<Dtype, int> >());
       int k = 0;
+      std::vector<int>::iterator match_idx;
       for ( k = 0; k < this_top_k; k++) {
-        if (bottom_data_vector[k].second == this_label) {
+        match_idx = std::find(this_label.begin(), this_label.end(), 
+                bottom_data_vector[k].second);
+        if (match_idx != this_label.end()) {
           accuracy[depth_level] += 1;
           break;
         } 
       } 
       // if lower layers are wrong, break directly
-      if (bottom_data_vector[k].second != this_label)
+      if (match_idx == this_label.end())
         break;
 
       // update the node_idx to the next level 
       int skip_nodes = 0;
       for (int node = depth_end_position_[depth_level]; node < node_idx; node++)
           skip_nodes += num_classes_[node]; 
-      node_idx = depth_end_position_[depth_level+1] + skip_nodes + this_label;
+      node_idx = depth_end_position_[depth_level+1] + skip_nodes + *match_idx;
 
       depth_level++;
     }
