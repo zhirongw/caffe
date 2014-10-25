@@ -41,7 +41,7 @@ void SoftmaxWithLossTreeLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bot
   softmax_top_vec_.resize(num_nodes_);
   softmax_layer_.resize(num_nodes_);
   prob_.resize(num_nodes_);
-  ls_.resize(bottom[num_nodes_]->num());
+  ls_.resize(num_nodes_);
 
   // TODO: add layer_weight here
   CHECK_EQ(bottom_size, num_nodes_+1) << "labels should match with bottom blobs input";
@@ -128,15 +128,16 @@ void SoftmaxWithLossTreeLayer<Dtype>::Forward_cpu(
     CHECK(prob_[t]->width() == 1);
     Dtype loss = 0;
     int sample_cnt_ = 0;
+    ls_[t].resize(num);
     for (int i = 0; i < num; ++i) {
       for (int j = 0; j < spatial_dim; j++) {
         int raw_label = static_cast<int>(label[i * spatial_dim + j]);
         vector<int> this_label = new_labels_[t][raw_label];
         sample_cnt_++;
         if (this_label.size() > 0) {
-          caffe_rng_uniform(1, Dtype(0), Dtype(this_label.size()), &ls_[i]);
+          caffe_rng_uniform(1, Dtype(0), Dtype(this_label.size()), &ls_[t][i]);
           loss -= log(std::max(prob_data[i * dim +
-                                this_label[int(ls_[i])] * spatial_dim + j],
+                                this_label[int(ls_[t][i])] * spatial_dim + j],
                                Dtype(FLT_MIN)));
         }
       }
@@ -190,7 +191,7 @@ void SoftmaxWithLossTreeLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& t
           int raw_label = static_cast<int>(label[i * spatial_dim + j]);
           this_label = new_labels_[node_idx][raw_label];
           if (this_label.size() > 0) {
-            bottom_diff[i * dim + this_label[int(ls_[i])]
+            bottom_diff[i * dim + this_label[int(ls_[node_idx][i])]
                 * spatial_dim + j] -= 1;
           }
           else {

@@ -974,7 +974,7 @@ protected:
 
   vector<Dtype> node_loss_;
   vector<Dtype> node_weight_;
-  vector<Dtype> ls_; // label sample
+  vector<vector<Dtype> > ls_; // label sample
   vector<vector<vector<int> > > new_labels_;
   vector<int> num_classes_;
   vector<int> depth_end_position_;
