@@ -14,14 +14,24 @@
 #include "caffe/util/io.hpp"
 #include "caffe/vision_layers.hpp"
 
+#ifdef USE_MPI
+#include "mpi.h"
+#endif
+
 using namespace caffe;  // NOLINT(build/namespaces)
 
 template<typename Dtype>
 int feature_extraction_pipeline(int argc, char** argv);
 
 int main(int argc, char** argv) {
+#ifdef USE_MPI
+	MPI_Init(&argc, &argv);
+#endif
   return feature_extraction_pipeline<float>(argc, argv);
 //  return feature_extraction_pipeline<double>(argc, argv);
+#ifdef USE_MPI
+  MPI_Finalize();
+#endif
 }
 
 template<typename Dtype>
@@ -162,7 +172,7 @@ int feature_extraction_pipeline(int argc, char** argv) {
         }
         string value;
         datum.SerializeToString(&value);
-        snprintf(key_str, kMaxKeyStrLength, "%d", image_indices[i]);
+        snprintf(key_str, kMaxKeyStrLength, "%08d", image_indices[i]);
         feature_batches[i]->Put(string(key_str), value);
         ++image_indices[i];
         if (image_indices[i] % 1000 == 0) {

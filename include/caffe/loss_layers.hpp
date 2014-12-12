@@ -981,6 +981,127 @@ protected:
   int tree_depth_;
 };
 
+/* MultiLabelLossLayer, now it only computes Sigmoid Loss,
+but could be extended to use HingeLoss
+*/
+template <typename Dtype>
+class MultiLabelLossLayer : public LossLayer<Dtype> {
+ public:
+  explicit MultiLabelLossLayer(const LayerParameter& param)
+      : LossLayer<Dtype>(param),
+          sigmoid_layer_(new SigmoidLayer<Dtype>(param)),
+          sigmoid_output_(new Blob<Dtype>()) {}
+  virtual void FurtherSetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+  virtual inline LayerParameter_LayerType type() const {
+    return LayerParameter_LayerType_MULTI_LABEL_LOSS;
+  }
+
+  virtual inline int MaxTopBlobs() const { return 2; }
+
+  // We cannot backpropagate to the labels; ignore force_backward for these
+  // inputs.
+  virtual inline bool AllowForceBackward(const int bottom_index) const {
+    return bottom_index != 1;
+  }
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom);
+  virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom);
+
+  shared_ptr<SigmoidLayer<Dtype> > sigmoid_layer_;
+  // sigmoid_output stores the output of the sigmoid layer.
+  shared_ptr<Blob<Dtype> > sigmoid_output_;
+  // Vector holders to call the underlying sigmoid layer forward and backward.
+  vector<Blob<Dtype>*> sigmoid_bottom_vec_;
+  vector<Blob<Dtype>*> sigmoid_top_vec_;
+};
+
+
+/* MultiLabelAccuracyLayer
+  Note: not an actual loss layer! Does not implement backwards step.
+  Computes the accuracy of a with respect to b.
+*/
+template <typename Dtype>
+class MultiLabelAccuracyLayer : public Layer<Dtype> {
+ public:
+  explicit MultiLabelAccuracyLayer(const LayerParameter& param)
+      : Layer<Dtype>(param) {}
+  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+  virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
+        vector<Blob<Dtype>*>* top);
+
+  virtual inline LayerParameter_LayerType type() const {
+    return LayerParameter_LayerType_MULTI_LABEL_ACCURACY;
+  }
+
+  virtual inline int ExactNumBottomBlobs() const { return 2; }
+  virtual inline int ExactNumTopBlobs() const { return 1; }
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom) {
+    NOT_IMPLEMENTED;
+  }
+};
+
+/**
+ * @brief Compute the difference of regressed map with the groundtruth map
+ *
+ */
+template <typename Dtype>
+class MapRegressionLossLayer : public LossLayer<Dtype> {
+ public:
+  explicit MapRegressionLossLayer(const LayerParameter& param)
+      : LossLayer<Dtype>(param), diff_map_() {}
+  virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+  virtual inline int ExactNumBottomBlobs() const { return 2; }
+  virtual inline LayerParameter_LayerType type() const {
+    return LayerParameter_LayerType_MAP_REGRESSION_LOSS;
+  }
+  /* *
+   * We cannot back propagate to the mask
+   *
+   */
+  virtual inline bool AllowForceBackward(const int bottom_index) const {
+    return bottom_index != 1;
+  }
+
+ protected:
+  /// @copydoc MapRegressionLossLayer
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+  /**
+   * @brief Computes the difference between the regressed map and the groundtruth map
+   *
+   *
+   */
+  virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom);
+  virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom);
+
+  Blob<Dtype> diff_map_;  // cached for backward pass
+  Blob<Dtype> dist_sq_;  // cached for backward pass
+  Blob<Dtype> diff_sq_;  // tmp storage for gpu forward pass
+  Blob<Dtype> summer_vec_;  // tmp storage for gpu forward pass
+};
 
 }  // namespace caffe
 

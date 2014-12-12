@@ -231,6 +231,10 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new MemoryDataLayer<Dtype>(param);
   case LayerParameter_LayerType_MVN:
     return new MVNLayer<Dtype>(param);
+  case LayerParameter_LayerType_MULTI_LABEL_ACCURACY:
+	return new MultiLabelAccuracyLayer<Dtype>(param);
+  case LayerParameter_LayerType_MULTI_LABEL_LOSS:
+  	return new MultiLabelLossLayer<Dtype>(param);
   case LayerParameter_LayerType_MULTINOMIAL_LOGISTIC_LOSS:
     return new MultinomialLogisticLossLayer<Dtype>(param);
   case LayerParameter_LayerType_POOLING:
@@ -263,6 +267,12 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new AccuracyTreeLayer<Dtype>(param);
   case LayerParameter_LayerType_WINDOW_DATA:
     return new WindowDataLayer<Dtype>(param);
+  case LayerParameter_LayerType_MAP_REGRESSION_LOSS:
+	  return new MapRegressionLossLayer<Dtype>(param);
+  case LayerParameter_LayerType_TILED_INNERPRODUCT:
+	  return new TiledInnerProductLayer<Dtype>(param);
+  case LayerParameter_LayerType_TILED_CONVOLUTION:
+	  return new TiledConvolutionLayer<Dtype>(param);
   case LayerParameter_LayerType_NONE:
     LOG(FATAL) << "Layer " << name << " has unspecified type.";
   default:

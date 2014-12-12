@@ -1,34 +1,35 @@
 name: "GoogLeNet"
 layers {
   name: "data"
-  type: DATA
+  type: COMPACT_DATA
   top: "data"
   top: "label"
   data_param {
-    source: "examples/imagenet/imagenet_train_lmdb"
+    source: "/media/ssd/caffe-official/examples/imagenet/imagenet_train_compact_lmdb"
     backend: LMDB
     batch_size: 64
   }
   transform_param {
     crop_size: 224
-    mean_file: "data/ilsvrc12/imagenet_mean.binaryproto"
+    mean_file: "data/ilsvrc12/imagenet_mean_crop.binaryproto"
     mirror: true
+    multiscale: false
   }
   include: { phase: TRAIN }
 }
 layers {
   name: "data"
-  type: DATA
+  type: COMPACT_DATA
   top: "data"
   top: "label"
   data_param {
-    source: "examples/imagenet/imagenet_val_lmdb"
+    source: "/media/ssd/caffe-official/examples/imagenet/imagenet_val_compact_lmdb"
     backend: LMDB
     batch_size: 10
   }
   transform_param {
     crop_size: 224
-    mean_file: "data/ilsvrc12/imagenet_mean.binaryproto"
+    mean_file: "data/ilsvrc12/imagenet_mean_crop.binaryproto"
     mirror: false
   }
   include: { phase: TEST }
@@ -2233,3 +2234,4 @@ layers {
     top_k: 5
   }
 }
+
