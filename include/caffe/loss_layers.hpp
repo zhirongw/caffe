@@ -223,7 +223,7 @@ class AccuracyTreeLayer : public Layer<Dtype> {
   }
 
   int top_k_;
-  vector<vector<int> > new_labels_;
+  vector<vector<vector<int> > > new_labels_;
   vector<int> num_classes_;
   vector<int> depth_end_position_;
   int num_nodes_;
@@ -974,7 +974,8 @@ protected:
 
   vector<Dtype> node_loss_;
   vector<Dtype> node_weight_;
-  vector<vector<int> > new_labels_;
+  vector<vector<Dtype> > ls_; // label sample
+  vector<vector<vector<int> > > new_labels_;
   vector<int> num_classes_;
   vector<int> depth_end_position_;
   int num_nodes_;
