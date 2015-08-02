@@ -25,6 +25,12 @@ void ChnwiseLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       coeffs_[i] = this->layer_param().eltwise_param().coeff(i);
     }
   }
+  axis_ = 2;
+  num_ = bottom[0]->count(0, axis_);
+  dim_ = bottom[0]->count(axis_);
+  stable_prod_grad_ = this->layer_param_.eltwise_param().stable_prod_grad();
+  CHECK(!stable_prod_grad_ || (bottom[0] != top[0]))
+        << "Only support unstable production gradient for in-place calculation";
 }
 
 template <typename Dtype>
@@ -34,9 +40,6 @@ void ChnwiseLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     CHECK(bottom[i]->shape(1) == bottom[0]->shape(1));
   }
   top[0]->ReshapeLike(*bottom[0]);
-  axis_ = 2;
-  num_ = bottom[0]->count(0, axis_);
-  dim_ = bottom[0]->count(axis_);
   vector<int> mult_shape(1, dim_);
   multiplier_.Reshape(mult_shape);
 }
@@ -84,6 +87,26 @@ void ChnwiseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   Dtype* mult_data = multiplier_.mutable_cpu_data();
   switch (op_) {
     case EltwiseParameter_EltwiseOp_PROD:
+      if (propagate_down[1]) {
+        const Dtype* top_diff = top[0]->cpu_diff();
+        Dtype* bottom_data_a = bottom[0]->mutable_cpu_data();
+        const Dtype* bottom_data_b = bottom[1]->cpu_data();
+        const Dtype* top_data = top[0]->cpu_data();
+        Dtype* bottom_diff_b = bottom[1]->mutable_cpu_diff();
+        caffe_set(bottom[0]->shape(1), Dtype(0), bottom_diff_b);
+        for (int n = 0; n < bottom[0]->shape(0); ++n) {
+          for (int c = 0; c < bottom[0]->shape(1); ++c) {
+            if (!stable_prod_grad_) {
+              caffe_set(dim_, bottom_data_b[c], mult_data);
+              caffe_div(dim_, top_data, mult_data, bottom_data_a);
+              top_data += dim_;
+            }
+            bottom_diff_b[c] += caffe_cpu_dot(dim_, top_diff, bottom_data_a);
+            bottom_data_a += dim_;
+            top_diff += dim_;
+          }
+        }
+      }
       if (propagate_down[0]) {
         const Dtype* top_diff = top[0]->cpu_diff();
         const Dtype* bottom_data_b = bottom[1]->cpu_data();
@@ -97,30 +120,8 @@ void ChnwiseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
           }
         }
       }
-      if (propagate_down[1]) {
-        const Dtype* top_diff = top[0]->cpu_diff();
-        const Dtype* bottom_data_a = bottom[0]->cpu_data();
-        Dtype* bottom_diff_b = bottom[1]->mutable_cpu_diff();
-        caffe_set(bottom[0]->shape(1), Dtype(0), bottom_diff_b);
-        for (int n = 0; n < bottom[0]->shape(0); ++n) {
-          for (int c = 0; c < bottom[0]->shape(1); ++c) {
-            bottom_diff_b[c] += caffe_cpu_dot(dim_, top_diff, bottom_data_a);
-            bottom_data_a += dim_;
-            top_diff += dim_;
-          }
-        }
-      }
       break;
     case EltwiseParameter_EltwiseOp_SUM:
-      if (propagate_down[0]) {
-        const Dtype* top_diff = top[0]->cpu_diff();
-        Dtype* bottom_diff_a = bottom[0]->mutable_cpu_diff();
-        if (coeffs_[0] == Dtype(1)) {
-          caffe_copy(count, top_diff, bottom_diff_a);
-        } else {
-          caffe_cpu_scale(count, coeffs_[0], top_diff, bottom_diff_a);
-        }
-      }
       if (propagate_down[1]) {
         const Dtype* top_diff = top[0]->cpu_diff();
         Dtype* bottom_diff_b = bottom[1]->mutable_cpu_diff();
@@ -131,6 +132,15 @@ void ChnwiseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
             bottom_diff_b[c] += caffe_cpu_dot(dim_, top_diff, mult_data);
             top_diff += dim_;
           }
+        }
+      }
+      if (propagate_down[0]) {
+        const Dtype* top_diff = top[0]->cpu_diff();
+        Dtype* bottom_diff_a = bottom[0]->mutable_cpu_diff();
+        if (coeffs_[0] == Dtype(1)) {
+          caffe_copy(count, top_diff, bottom_diff_a);
+        } else {
+          caffe_cpu_scale(count, coeffs_[0], top_diff, bottom_diff_a);
         }
       }
       break;

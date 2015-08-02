@@ -219,6 +219,7 @@ class ChnwiseLayer : public Layer<Dtype> {
   int dim_;
   /// @brief a helper Blob used for summation (op_ == SUM)
   Blob<Dtype> multiplier_;
+  bool stable_prod_grad_;
 };
 
 /**
