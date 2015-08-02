@@ -32,11 +32,6 @@ void UnpoolingLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       && unpool_param.has_stride_w())
       || (!unpool_param.has_stride_h() && !unpool_param.has_stride_w()))
       << "Stride is stride OR stride_h and stride_w are required.";
-  CHECK((!unpool_param.has_unpool_size() && unpool_param.has_unpool_h()
-      && unpool_param.has_unpool_w())
-      || (unpool_param.has_unpool_size() &&!unpool_param.has_unpool_h()
-      && !unpool_param.has_unpool_w()))
-      << "Unpool is unpool_size OR unpool_h and unpool_w are required.";
 
   if (unpool_param.has_kernel_size()) {
     kernel_h_ = kernel_w_ = unpool_param.kernel_size();
@@ -127,12 +122,12 @@ void UnpoolingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
           for (int pw = 0; pw < width_; ++pw) {
             int uph = max(0,min(ph * stride_h_ - pad_h_, unpooled_height_-1));
             int upw = max(0,min(pw * stride_w_ - pad_w_, unpooled_width_-1)); 
-	    const int index = ph * width_ + pw;
-            const int unpooled_index = uph * unpooled_width_ + upw; 
+	        const int index = ph * width_ + pw;
             if (use_bottom_mask) {
               const int mask_index = bottom_mask[index];
               top_data[mask_index] = bottom_data[index];
             } else {
+              const int unpooled_index = uph * unpooled_width_ + upw;
               top_data[unpooled_index] = bottom_data[index];
             }
           }
@@ -236,11 +231,11 @@ void UnpoolingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
             int uph = max(0,min(ph * stride_h_ - pad_h_, unpooled_height_-1));
             int upw = max(0,min(pw * stride_w_ - pad_w_, unpooled_width_-1)); 
             const int index = ph * width_ + pw;
-            const int unpooled_index = uph * unpooled_width_ + upw; 
             if (use_bottom_mask) {
               const int mask_index = bottom_mask[index];
               bottom_diff[index] = top_diff[mask_index]; 
             } else {
+              const int unpooled_index = uph * unpooled_width_ + upw;
               bottom_diff[index] = top_diff[unpooled_index];
             }
           }
