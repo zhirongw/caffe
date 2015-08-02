@@ -10,10 +10,33 @@ namespace caffe {
 
 template <typename Dtype>
 void DeconvolutionLayer<Dtype>::compute_output_shape() {
+  // Initialize with automatic calculations.
   this->height_out_ = this->stride_h_ * (this->height_ - 1) + this->kernel_h_
       - 2 * this->pad_h_;
   this->width_out_ = this->stride_w_ * (this->width_ - 1) + this->kernel_w_
       - 2 * this->pad_w_;
+  // Check whether to hard code the output size
+  if (this->layer_param_.convolution_param().has_out()) {
+    CHECK(this->layer_param_.convolution_param().out() >= this->height_out_
+        && this->layer_param_.convolution_param().out() - this->height_out_ < this->stride_h_)
+        << "Output height should be within [height_out_, height_out + stride_h - 1]";
+    CHECK(this->layer_param_.convolution_param().out() >= this->width_out_
+        && this->layer_param_.convolution_param().out() - this->width_out_ < this->stride_w_)
+        << "Output width should be within [width_out_, width_out + stride_w - 1]";
+    this->height_out_ = this->layer_param_.convolution_param().out();
+    this->width_out_= this->layer_param_.convolution_param().out();
+  }
+  if (this->layer_param_.convolution_param().has_out_h()
+          && this->layer_param_.convolution_param().has_out_w()) {
+    CHECK(this->layer_param_.convolution_param().out_h() >= this->height_out_
+        && this->layer_param_.convolution_param().out_h() - this->height_out_ < this->stride_h_)
+        << "Output height should be within [height_out_, height_out + stride_h - 1]";
+    CHECK(this->layer_param_.convolution_param().out_w() >= this->width_out_
+        && this->layer_param_.convolution_param().out_w() - this->width_out_ < this->stride_w_)
+        << "Output width should be within [width_out_, width_out + stride_w - 1]";
+    this->height_out_ = this->layer_param_.convolution_param().out_h();
+    this->width_out_= this->layer_param_.convolution_param().out_w();
+  }
 }
 
 template <typename Dtype>

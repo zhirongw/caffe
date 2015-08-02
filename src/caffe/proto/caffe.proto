@@ -459,6 +459,9 @@ message ConvolutionParameter {
   optional uint32 stride = 6 [default = 1]; // The stride (equal in Y, X)
   optional uint32 stride_h = 13; // The stride height
   optional uint32 stride_w = 14; // The stride width
+  optional uint32 out = 16; // The output size, only for deconv use
+  optional uint32 out_h = 17; // The output height, only for deconv use
+  optional uint32 out_w = 18; // The output width, only for deconv use
   optional FillerParameter weight_filler = 7; // The filler for the weight
   optional FillerParameter bias_filler = 8; // The filler for the bias
   enum Engine {
