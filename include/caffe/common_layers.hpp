@@ -181,6 +181,47 @@ class EltwiseLayer : public Layer<Dtype> {
 };
 
 /**
+ * @brief Compute channelwise operations, such as product and sum,
+ *        along multiple input Blobs.
+ *
+ * TODO(dox): thorough documentation for Forward, Backward, and proto params.
+ */
+template <typename Dtype>
+class ChnwiseLayer : public Layer<Dtype> {
+ public:
+  explicit ChnwiseLayer(const LayerParameter& param)
+      : Layer<Dtype>(param) {}
+  virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+  virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+
+  virtual inline const char* type() const { return "Chnwise"; }
+  virtual inline int MinBottomBlobs() const { return 2; }
+  virtual inline int ExactNumTopBlobs() const { return 1; }
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      const vector<Blob<Dtype>*>& top);
+  virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
+  virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
+      const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
+
+  EltwiseParameter_EltwiseOp op_;
+  vector<Dtype> coeffs_;
+  int axis_;
+  /// @brief the number of reductions performed
+  int num_;
+  /// @brief the input size of each reduction
+  int dim_;
+  /// @brief a helper Blob used for summation (op_ == SUM)
+  Blob<Dtype> multiplier_;
+};
+
+/**
  * @brief Takes two+ Blobs, interprets last Blob as a selector and
  *  filter remaining Blobs accordingly with selector data (0 means that
  * the corresponding item has to be filtered, non-zero means that corresponding
