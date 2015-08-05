@@ -117,6 +117,23 @@ class NeuronLayerTest : public MultiDeviceTest<TypeParam> {
           + slope_data[c] * std::min(bottom_data[i], (Dtype)(0)));
     }
   }
+  void TestPeriodic(PeriodicLayer<Dtype> *layer) {
+    layer->Forward(this->blob_bottom_vec_, this->blob_top_vec_);
+  // Now, check values
+    const Dtype* bottom_data = this->blob_bottom_->cpu_data();
+    const Dtype* top_data = this->blob_top_->cpu_data();
+    const Dtype* omega_data = layer->blobs()[0]->cpu_data();
+    const Dtype* phase_data = layer->blobs()[1]->cpu_data();
+    int hw = this->blob_bottom_->height() * this->blob_bottom_->width();
+    int channels = this->blob_bottom_->channels();
+    bool channel_shared = layer->layer_param().periodic_param().channel_shared();
+    const Dtype kDelta = 2e-4;
+    for (int i = 0; i < this->blob_bottom_->count(); ++i) {
+      int c = channel_shared ? 0 : (i / hw) % channels;
+      EXPECT_NEAR(top_data[i],
+          std::sin(omega_data[c] * bottom_data[i] + phase_data[c]), kDelta);
+    }
+  }
 
   void LogBottomInit() {
     FillerParameter filler_param;
@@ -707,6 +724,52 @@ TYPED_TEST(NeuronLayerTest, TestPReLUInPlace) {
     EXPECT_EQ(prelu.blobs()[0]->cpu_diff()[s],
         prelu2.blobs()[0]->cpu_diff()[s]);
   }
+}
+
+TYPED_TEST(NeuronLayerTest, TestPeriodicForward) {
+  typedef typename TypeParam::Dtype Dtype;
+  LayerParameter layer_param;
+  PeriodicLayer<Dtype> layer(layer_param);
+  layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  FillerParameter filler_param;
+  GaussianFiller<Dtype> filler(filler_param);
+  filler.Fill(layer.blobs()[0].get());
+  filler.Fill(layer.blobs()[1].get());
+  this->TestPeriodic(&layer);
+}
+
+TYPED_TEST(NeuronLayerTest, TestPeriodicForwardChannelShared) {
+  typedef typename TypeParam::Dtype Dtype;
+  LayerParameter layer_param;
+  layer_param.mutable_periodic_param()->set_channel_shared(true);
+  PeriodicLayer<Dtype> layer(layer_param);
+  layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  this->TestPeriodic(&layer);
+}
+
+TYPED_TEST(NeuronLayerTest, TestPeriodicGradient) {
+  typedef typename TypeParam::Dtype Dtype;
+  LayerParameter layer_param;
+  PeriodicLayer<Dtype> layer(layer_param);
+  layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  FillerParameter filler_param;
+  GaussianFiller<Dtype> filler(filler_param);
+  filler.Fill(layer.blobs()[0].get());
+  filler.Fill(layer.blobs()[1].get());
+  GradientChecker<Dtype> checker(1e-2, 1e-3, 1701, 0., 0.01);
+  checker.CheckGradientExhaustive(&layer, this->blob_bottom_vec_,
+      this->blob_top_vec_);
+}
+
+TYPED_TEST(NeuronLayerTest, TestPeriodicGradientChannelShared) {
+  typedef typename TypeParam::Dtype Dtype;
+  LayerParameter layer_param;
+  layer_param.mutable_periodic_param()->set_channel_shared(true);
+  PReLULayer<Dtype> layer(layer_param);
+  layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
+  GradientChecker<Dtype> checker(1e-2, 1e-3, 1701, 0., 0.01);
+  checker.CheckGradientExhaustive(&layer, this->blob_bottom_vec_,
+      this->blob_top_vec_);
 }
 
 #ifdef USE_CUDNN

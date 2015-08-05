@@ -269,7 +269,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 140 (last added: bn_param)
+// LayerParameter next available layer-specific ID: 141 (last added: periodic_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -341,6 +341,7 @@ message LayerParameter {
   optional PoolingParameter pooling_param = 121;
   optional PowerParameter power_param = 122;
   optional PReLUParameter prelu_param = 131;
+  optional PeriodicParameter periodic_param = 141;
   optional PythonParameter python_param = 130;
   optional ReductionParameter reduction_param = 136;
   optional ReLUParameter relu_param = 123;
@@ -1147,4 +1148,11 @@ message PReLUParameter {
   optional FillerParameter filler = 1;
   // Whether or not slope paramters are shared across channels.
   optional bool channel_shared = 2 [default = false];
+}
+message PeriodicParameter {
+  // Initialization
+  optional FillerParameter omega_filler = 1;
+  optional FillerParameter phase_filler = 2;
+  // Whether or not paramters are shared across channels.
+  optional bool channel_shared = 3 [default = false];
 }
