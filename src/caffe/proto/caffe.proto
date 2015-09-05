@@ -1150,9 +1150,14 @@ message PReLUParameter {
   optional bool channel_shared = 2 [default = false];
 }
 message PeriodicParameter {
+  enum PeriodicFunction {
+    SIN = 0;
+    TRI = 1;
+  }
+  optional PeriodicFunction periodic_function = 1 [default = SIN]; // The pooling method
   // Initialization
-  optional FillerParameter omega_filler = 1;
-  optional FillerParameter phase_filler = 2;
+  optional FillerParameter omega_filler = 2;
+  optional FillerParameter phase_filler = 3;
   // Whether or not paramters are shared across channels.
-  optional bool channel_shared = 3 [default = false];
+  optional bool channel_shared = 4 [default = false];
 }

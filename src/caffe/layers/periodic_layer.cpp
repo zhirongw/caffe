@@ -80,12 +80,26 @@ void PeriodicLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     caffe_copy(count, bottom_data, bottom_memory_.mutable_cpu_data());
   }
 
-  // if channel_shared, channel index in the following computation becomes
-  // always zero.
   const int div_factor = channel_shared_ ? channels : 1;
-  for (int i = 0; i < count; ++i) {
-    int c = (i / dim) % channels / div_factor;
-    top_data[i] = std::sin(bottom_data[i] * omega_data[c] + phase_data[c]);
+  switch (this->layer_param_.periodic_param().periodic_function()) {
+  case PeriodicParameter_PeriodicFunction_SIN:
+    // if channel_shared, channel index in the following computation becomes
+    // always zero.
+    for (int i = 0; i < count; ++i) {
+      int c = (i / dim) % channels / div_factor;
+      top_data[i] = std::sin(bottom_data[i] * omega_data[c] + phase_data[c]);
+    }
+    break;
+  case PeriodicParameter_PeriodicFunction_TRI:
+    for (int i = 0; i < count; ++i) {
+      int c = (i / dim) % channels / div_factor;
+      Dtype x = bottom_data[i] * omega_data[c] + phase_data[c];
+      int nslope = int(std::floor(x)) % 2;
+      top_data[i] = nslope ? ceil(x) - x : x - floor(x);
+    }
+    break;
+  default:
+    LOG(FATAL) << "Unknown Periodic Function";
   }
 }
 
@@ -110,63 +124,130 @@ void PeriodicLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   // always zero.
   const int div_factor = channel_shared_ ? channels : 1;
 
-  // Propagte to param
-  // Since to write bottom diff will affect top diff if top and bottom blobs
-  // are identical (in-place computaion), we first compute param backward to
-  // keep top_diff unchanged.
-  for (int n = 0; n < bottom[0]->num(); ++n) {
-    Dtype* backward_buffer_diff = backward_buff_.mutable_cpu_diff();
-    for (int i = 0; i < cdim; ++i) {
-      int c = (i / dim) % channels / div_factor;
-      backward_buffer_diff[i] = top_diff[i] *
-          std::cos(bottom_data[i] * omega_data[c] + phase_data[c]);
-    }
-
-    // Propagate to phase data
-    if (this->param_propagate_down_[1]) {
-      Dtype* phase_diff = this->blobs_[1]->mutable_cpu_diff();
-      if (channel_shared_) {
-        Dtype d;
-        caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
-            multiplier_.cpu_data());
-        caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), phase_diff);
-      } else {
-        caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
-            backward_buff_.cpu_diff(), multiplier_.cpu_data(), 1.,
-            phase_diff);
-      }
-    }
-
-    // Propagate to bottom
-    if (propagate_down[0]) {
-      Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-      bottom_diff = bottom_diff + bottom[0]->offset(n);
-      const Dtype* backward_buffer_diff = backward_buff_.cpu_diff();
+  switch(this->layer_param_.periodic_param().periodic_function()) {
+  case PeriodicParameter_PeriodicFunction_SIN:
+    // Propagte to param
+    // Since to write bottom diff will affect top diff if top and bottom blobs
+    // are identical (in-place computaion), we first compute param backward to
+    // keep top_diff unchanged.
+    for (int n = 0; n < bottom[0]->num(); ++n) {
+      Dtype* backward_buffer_diff = backward_buff_.mutable_cpu_diff();
       for (int i = 0; i < cdim; ++i) {
         int c = (i / dim) % channels / div_factor;
-        bottom_diff[i] = omega_data[c] * backward_buffer_diff[i];
+        backward_buffer_diff[i] = top_diff[i] *
+            std::cos(bottom_data[i] * omega_data[c] + phase_data[c]);
       }
-    }
 
-    // Propagate to omega
-    if (this->param_propagate_down_[0]) {
-      Dtype* omega_diff = this->blobs_[0]->mutable_cpu_diff();
-      caffe_mul(cdim, backward_buff_.cpu_diff(), 
-        bottom_data, backward_buff_.mutable_cpu_diff());
-      if (channel_shared_) {
-        Dtype d;
-        d = caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
-            multiplier_.cpu_data());
-        caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), omega_diff);
-      } else {
-        caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
-            backward_buff_.cpu_diff(), multiplier_.cpu_data(), 1.,
-            omega_diff);
+      // Propagate to phase data
+      if (this->param_propagate_down_[1]) {
+        Dtype* phase_diff = this->blobs_[1]->mutable_cpu_diff();
+        if (channel_shared_) {
+          Dtype d;
+          caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
+              multiplier_.cpu_data());
+          caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), phase_diff);
+        } else {
+          caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
+              backward_buff_.cpu_diff(), multiplier_.cpu_data(), 1.,
+              phase_diff);
+        }
       }
+
+      // Propagate to bottom
+      if (propagate_down[0]) {
+        Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
+        bottom_diff = bottom_diff + bottom[0]->offset(n);
+        const Dtype* backward_buffer_diff = backward_buff_.cpu_diff();
+        for (int i = 0; i < cdim; ++i) {
+          int c = (i / dim) % channels / div_factor;
+          bottom_diff[i] = omega_data[c] * backward_buffer_diff[i];
+        }
+      }
+
+      // Propagate to omega
+      if (this->param_propagate_down_[0]) {
+        Dtype* omega_diff = this->blobs_[0]->mutable_cpu_diff();
+        caffe_mul(cdim, backward_buff_.cpu_diff(),
+          bottom_data, backward_buff_.mutable_cpu_diff());
+        if (channel_shared_) {
+          Dtype d;
+          d = caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
+              multiplier_.cpu_data());
+          caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), omega_diff);
+        } else {
+          caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
+              backward_buff_.cpu_diff(), multiplier_.cpu_data(), 1.,
+              omega_diff);
+        }
+      }
+      bottom_data += cdim;
+      top_diff += cdim;
     }
-    bottom_data += cdim;
-    top_diff += cdim;
+    break;
+  case PeriodicParameter_PeriodicFunction_TRI:
+    // Propagte to param
+    // Since to write bottom diff will affect top diff if top and bottom blobs
+    // are identical (in-place computaion), we first compute param backward to
+    // keep top_diff unchanged.
+    for (int n = 0; n < bottom[0]->num(); ++n) {
+      Dtype* backward_buffer_diff = backward_buff_.mutable_cpu_diff();
+      for (int i = 0; i < cdim; ++i) {
+        int c = (i / dim) % channels / div_factor;
+        Dtype x = bottom_data[i] * omega_data[c] + phase_data[c];
+        int nslope = int(floor(x)) % 2;
+        backward_buffer_diff[i] = nslope ? - top_diff[i] : top_diff[i];
+      }
+
+      // Propagate to phase data
+      if (this->param_propagate_down_[1]) {
+        Dtype* phase_diff = this->blobs_[1]->mutable_cpu_diff();
+        if (channel_shared_) {
+          Dtype d;
+          caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
+              multiplier_.cpu_data());
+          caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), phase_diff);
+        } else {
+          caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
+              backward_buff_.cpu_diff(), multiplier_.cpu_data(), 1.,
+              phase_diff);
+        }
+      }
+
+      // Propagate to bottom
+      if (propagate_down[0]) {
+        Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
+        bottom_diff = bottom_diff + bottom[0]->offset(n);
+        const Dtype* backward_buffer_diff = backward_buff_.cpu_diff();
+        for (int i = 0; i < cdim; ++i) {
+          int c = (i / dim) % channels / div_factor;
+          bottom_diff[i] = omega_data[c] * backward_buffer_diff[i];
+        }
+      }
+
+      // Propagate to omega
+      if (this->param_propagate_down_[0]) {
+        Dtype* omega_diff = this->blobs_[0]->mutable_cpu_diff();
+        caffe_mul(cdim, backward_buff_.cpu_diff(),
+          bottom_data, backward_buff_.mutable_cpu_diff());
+        if (channel_shared_) {
+          Dtype d;
+          d = caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
+              multiplier_.cpu_data());
+          caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), omega_diff);
+        } else {
+          caffe_cpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
+              backward_buff_.cpu_diff(), multiplier_.cpu_data(), 1.,
+              omega_diff);
+        }
+      }
+      bottom_data += cdim;
+      top_diff += cdim;
+    }
+    break;
+  default:
+    LOG(FATAL) << "Unknown Periodic Function";
   }
+
 }
 
 
