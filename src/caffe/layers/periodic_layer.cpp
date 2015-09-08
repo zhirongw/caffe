@@ -98,6 +98,13 @@ void PeriodicLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       top_data[i] = nslope ? ceil(x) - x : x - floor(x);
     }
     break;
+  case PeriodicParameter_PeriodicFunction_BND:
+    for (int i = 0; i < count; ++i) {
+      int c = (i / dim) % channels / div_factor;
+      top_data[i] = std::max(Dtype(0), std::min(Dtype(1), 
+          bottom_data[i] * omega_data[c]));
+    }
+    break;
   default:
     LOG(FATAL) << "Unknown Periodic Function";
   }
@@ -244,10 +251,27 @@ void PeriodicLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       top_diff += cdim;
     }
     break;
+  case PeriodicParameter_PeriodicFunction_BND:
+    {
+    const Dtype* top_data = top[0]->cpu_data();
+    Dtype* omega_diff = this->blobs_[0]->mutable_cpu_diff();
+    Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
+    for (int i = 0; i < top[0]->count(); ++i) {
+      int c = (i / dim) % channels / div_factor;
+      if (this->param_propagate_down_[0]) {
+        omega_diff[c] += top_diff[i] * bottom_data[i]
+            * (top_data[i] < 1) * (top_data[i] > 0);
+      }
+      if (propagate_down[0]) {
+        bottom_diff[i] = top_diff[i] * omega_data[c]
+            * (top_data[i] < 1) * (top_data[i] > 0);
+      }
+    }
+    }
+    break;
   default:
     LOG(FATAL) << "Unknown Periodic Function";
   }
-
 }
 
 

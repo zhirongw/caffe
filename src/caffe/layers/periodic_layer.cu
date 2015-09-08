@@ -31,6 +31,18 @@ __global__ void TriForward(const int n, const int channels, const int dim,
   }
 }
 
+// CUDA kernel for bounded forward
+template <typename Dtype>
+__global__ void BndForward(const int n, const int channels, const int dim,
+    const Dtype* in, Dtype* out, const Dtype* omega_data,
+    const int div_factor) {
+  CUDA_KERNEL_LOOP(index, n) {
+    int c = (index / dim) % channels / div_factor;
+    out[index] = max(Dtype(0), min(Dtype(1),
+        in[index] * omega_data[c]));
+  }
+}
+
 // CUDA kernel for sin backward
 template <typename Dtype>
 __global__ void SinBackward(const int n, const int channels,
@@ -55,6 +67,17 @@ __global__ void TriBackward(const int n, const int channels,
     Dtype x = in_data[index] * omega_data[c] + phase_data[c];
     int nslope = int(floorf(x)) % 2;
     out_diff[index] = nslope ? - in_diff[index] : in_diff[index];
+  }
+}
+
+// CUDA kernel for bnd backward
+template <typename Dtype>
+__global__ void BndBackward(const int n, const int channels,
+    const int dim, const Dtype* in_diff, const Dtype* in_data,
+    Dtype* out_diff, const int div_factor) {
+  CUDA_KERNEL_LOOP(index, n) {
+    out_diff[index] = in_diff[index] * (in_data[index] < 1.)
+        * (in_data[index] > 0.);
   }
 }
 
@@ -101,6 +124,13 @@ void PeriodicLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
         phase_data, div_factor);
     CUDA_POST_KERNEL_CHECK;
     break;
+  case PeriodicParameter_PeriodicFunction_BND:
+    // NOLINT_NEXT_LINE(whitespace/operators)
+    BndForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+        count, channels, dim, bottom_data, top_data, omega_data,
+        div_factor);
+    CUDA_POST_KERNEL_CHECK;
+    break;
   default:
     LOG(FATAL) << "Unknown Periodic Function";
   }
@@ -111,6 +141,7 @@ void PeriodicLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) {
   const Dtype* bottom_data = bottom[0]->gpu_data();
+  const Dtype* top_data = top[0]->gpu_data();
   const Dtype* top_diff = top[0]->gpu_diff();
   const Dtype* omega_data = this->blobs_[0]->gpu_data();
   const Dtype* phase_data = this->blobs_[1]->gpu_data();
@@ -208,6 +239,46 @@ void PeriodicLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
               phase_diff);
         }
       }
+
+      // Propagate to bottom
+      if (propagate_down[0]) {
+        Dtype* bottom_diff = bottom[0]->mutable_gpu_diff();
+        BottomBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+            cdim, channels, dim, backward_buff_.gpu_diff(),
+            bottom_diff + bottom[0]->offset(n), omega_data, div_factor);
+        CUDA_POST_KERNEL_CHECK;
+      }
+
+      // Propagate to omega
+      if (this->param_propagate_down_[0]) {
+        Dtype* omega_diff = this->blobs_[0]->mutable_gpu_diff();
+        caffe_gpu_mul(cdim, backward_buff_.gpu_diff(), bottom_data
+            + bottom[0]->offset(n), backward_buff_.mutable_gpu_diff());
+        if (channel_shared_) {
+          Dtype d;
+          caffe_gpu_dot<Dtype>(cdim, backward_buff_.gpu_diff(),
+              bottom_data + bottom[0]->offset(n), &d);
+          caffe_gpu_add_scalar(this->blobs_[0]->count(), Dtype(d), omega_diff);
+        } else {
+          caffe_gpu_gemv<Dtype>(CblasNoTrans, channels, dim, 1.,
+              backward_buff_.gpu_diff(), multiplier_.gpu_data(), 1.,
+              omega_diff);
+        }
+      }
+    }
+    break;
+  case PeriodicParameter_PeriodicFunction_BND:
+    for (int n = 0; n < bottom[0]->num(); ++n) {
+      // NOLINT_NEXT_LINE(whitespace/operators)
+      BndBackward<Dtype><<<CAFFE_GET_BLOCKS(cdim),
+          CAFFE_CUDA_NUM_THREADS>>>(
+          cdim, channels, dim, top_diff + top[0]->offset(n),
+          top_data + top[0]->offset(n),
+          backward_buff_.mutable_gpu_diff(), div_factor);
+      CUDA_POST_KERNEL_CHECK;
+
+      // Propagate to phase
+        // No Phase data
 
       // Propagate to bottom
       if (propagate_down[0]) {

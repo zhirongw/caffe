@@ -1153,6 +1153,7 @@ message PeriodicParameter {
   enum PeriodicFunction {
     SIN = 0;
     TRI = 1;
+    BND = 2;
   }
   optional PeriodicFunction periodic_function = 1 [default = SIN]; // The pooling method
   // Initialization
