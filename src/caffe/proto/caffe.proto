@@ -1161,4 +1161,5 @@ message PeriodicParameter {
   optional FillerParameter phase_filler = 3;
   // Whether or not paramters are shared across channels.
   optional bool channel_shared = 4 [default = false];
+  optional float binary_loss = 5 [default = 0];
 }

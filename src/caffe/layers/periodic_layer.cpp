@@ -15,6 +15,8 @@ void PeriodicLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   PeriodicParameter periodic_param = this->layer_param().periodic_param();
   int channels = bottom[0]->channels();
   channel_shared_ = periodic_param.channel_shared();
+  lw_ = this->layer_param().periodic_param().binary_loss();
+  LOG(INFO) << "binary loss weight of periodic layer: " << lw_;
   if (this->blobs_.size() > 0) {
     LOG(INFO) << "Skipping parameter initialization";
   } else {
@@ -259,12 +261,12 @@ void PeriodicLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     for (int i = 0; i < top[0]->count(); ++i) {
       int c = (i / dim) % channels / div_factor;
       if (this->param_propagate_down_[0]) {
-        omega_diff[c] += top_diff[i] * bottom_data[i]
-            * (top_data[i] < 1) * (top_data[i] > 0);
+        omega_diff[c] += (top_diff[i] + lw_ * (top_data[i] < 0.5 ? 1 : -1)) 
+            * bottom_data[i] * (top_data[i] < 1) * (top_data[i] > 0);
       }
       if (propagate_down[0]) {
-        bottom_diff[i] = top_diff[i] * omega_data[c]
-            * (top_data[i] < 1) * (top_data[i] > 0);
+        bottom_diff[i] = (top_diff[i] + lw_ * (top_data[i] < 0.5 ? 1 : -1))
+            * omega_data[c] * (top_data[i] < 1) * (top_data[i] > 0);
       }
     }
     }

@@ -74,10 +74,10 @@ __global__ void TriBackward(const int n, const int channels,
 template <typename Dtype>
 __global__ void BndBackward(const int n, const int channels,
     const int dim, const Dtype* in_diff, const Dtype* in_data,
-    Dtype* out_diff, const int div_factor) {
+    Dtype* out_diff, const int div_factor, const Dtype lw) {
   CUDA_KERNEL_LOOP(index, n) {
-    out_diff[index] = in_diff[index] * (in_data[index] < 1.)
-        * (in_data[index] > 0.);
+    out_diff[index] = (in_diff[index] + lw * (in_data[index] < 0.5 ? 1 : -1))
+        * (in_data[index] < 1.) * (in_data[index] > 0.);
   }
 }
 
@@ -274,7 +274,7 @@ void PeriodicLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           CAFFE_CUDA_NUM_THREADS>>>(
           cdim, channels, dim, top_diff + top[0]->offset(n),
           top_data + top[0]->offset(n),
-          backward_buff_.mutable_gpu_diff(), div_factor);
+          backward_buff_.mutable_gpu_diff(), div_factor, lw_);
       CUDA_POST_KERNEL_CHECK;
 
       // Propagate to phase
