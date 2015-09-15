@@ -54,7 +54,8 @@ __global__ void AveUnpoolForward(const int nthreads, const Dtype* bottom_data,
     int pwstart = (w < kernel_w) ? 0 : (w - kernel_w) / stride_w + 1;
     int pwend = min(w / stride_w + 1, width);
     Dtype distval = 0;
-    bottom_data += (n * channels + c) * height * width;
+    const Dtype* const bottom_data_slice = 
+        bottom_data + (n * channels + c) * height * width;
     for (int ph = phstart; ph < phend; ++ph) {
       for (int pw = pwstart; pw < pwend; ++pw) {
         // figure out the pooling size
@@ -63,7 +64,7 @@ __global__ void AveUnpoolForward(const int nthreads, const Dtype* bottom_data,
         int hend = min(hstart + kernel_h, unpooled_height + pad_h);
         int wend = min(wstart + kernel_w, unpooled_width + pad_w);
         int pool_size = (hend - hstart) * (wend - wstart);
-        distval += bottom_data[ph * width + pw] / pool_size;
+        distval += bottom_data_slice[ph * width + pw] / pool_size;
       }
     }
     top_data[index] = distval;
@@ -199,10 +200,11 @@ __global__ void AveUnpoolBackward(const int nthreads, const Dtype* top_diff,
     hend = min(hend, unpooled_height);
     wend = min(wend, unpooled_width);
     Dtype gradient = 0;
-    top_diff += (n * channels + c) * unpooled_height * unpooled_width;
+    const Dtype* const top_diff_slice
+        top_diff + (n * channels + c) * unpooled_height * unpooled_width;
     for (int h = hstart; h < hend; ++h) {
       for (int w = wstart; w < wend; ++w) {
-        gradient += top_diff[h * unpooled_width + w];
+        gradient += top_diff_slice[h * unpooled_width + w];
       }
     }
     bottom_diff[index] = gradient / pool_size;

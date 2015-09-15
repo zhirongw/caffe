@@ -142,6 +142,7 @@ void UnpoolingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     }
     break;
   case UnpoolingParameter_UnpoolMethod_AVE:
+    caffe_set(top[0]->count(), Dtype(0), top_data);
      // The main loop
     for (int n = 0; n < top[0]->num(); ++n) {
       for (int c = 0; c < channels_; ++c) {
@@ -171,6 +172,7 @@ void UnpoolingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     }
     break;
   case UnpoolingParameter_UnpoolMethod_TILE:
+    caffe_set(top[0]->count(), Dtype(0), top_data);
      // The main loop
     for (int n = 0; n < top[0]->num(); ++n) {
       for (int c = 0; c < channels_; ++c) {
@@ -250,9 +252,7 @@ void UnpoolingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     }
     break;
   case UnpoolingParameter_UnpoolMethod_AVE:
-    for (int i = 0; i < bottom[0]->count(); ++i) {
-      bottom_diff[i] = 0;
-    }
+    caffe_set(bottom[0]->count(), Dtype(0), bottom_diff);
     // The main loop
     for (int n = 0; n < bottom[0]->num(); ++n) {
       for (int c = 0; c < channels_; ++c) {
@@ -283,9 +283,7 @@ void UnpoolingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     }
     break;
   case UnpoolingParameter_UnpoolMethod_TILE:
-    for (int i = 0; i < bottom[0]->count(); ++i) {
-      bottom_diff[i] = 0;
-    }
+    caffe_set(bottom[0]->count(), Dtype(0), bottom_diff);
     // The main loop
     for (int n = 0; n < bottom[0]->num(); ++n) {
       for (int c = 0; c < channels_; ++c) {
