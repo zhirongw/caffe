@@ -261,7 +261,7 @@ void PeriodicLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     for (int i = 0; i < top[0]->count(); ++i) {
       int c = (i / dim) % channels / div_factor;
       if (this->param_propagate_down_[0]) {
-        omega_diff[c] += (top_diff[i] + lw_ * (top_data[i] < 0.5 ? 1 : -1)) 
+        omega_diff[c] += (top_diff[i] + lw_ * std::log((1 - top_data[i]) / top_data[i]) / std::log(2.0)) 
             * bottom_data[i] * (top_data[i] < 1) * (top_data[i] > 0);
       }
       if (propagate_down[0]) {
