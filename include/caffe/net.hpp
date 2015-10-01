@@ -149,6 +149,9 @@ class Net {
   inline const vector<float>& params_weight_decay() const {
     return params_weight_decay_;
   }
+  inline const vector<float>& params_binary_grow() const {
+    return params_binary_grow_;
+  }
   const map<string, int>& param_names_index() const {
     return param_names_index_;
   }
@@ -254,6 +257,8 @@ class Net {
   vector<float> params_lr_;
   /// the weight decay multipliers
   vector<float> params_weight_decay_;
+  /// the binary growing multipliers
+  vector<float> params_binary_grow_;
   /// The bytes of memory used by this net
   size_t memory_used_;
   /// Whether to compute and display debug info for the net.

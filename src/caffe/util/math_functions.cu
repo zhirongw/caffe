@@ -282,6 +282,27 @@ void caffe_gpu_div<double>(const int N, const double* a,
 }
 
 template <typename Dtype>
+__global__ void inverse_kernel(const int n, Dtype* x) {
+  CUDA_KERNEL_LOOP(index, n) {
+    x[index] = 1.0 / x[index];
+  }
+}
+
+template <>
+void caffe_gpu_inverse<float>(const int N, float* x) {
+  // NOLINT_NEXT_LINE(whitespace/operators)
+  inverse_kernel<float><<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(
+      N, x);
+}
+
+template <>
+void caffe_gpu_inverse<double>(const int N, double* x) {
+  // NOLINT_NEXT_LINE(whitespace/operators)
+  inverse_kernel<double><<<CAFFE_GET_BLOCKS(N), CAFFE_CUDA_NUM_THREADS>>>(
+      N, x);
+}
+
+template <typename Dtype>
 __global__ void abs_kernel(const int n, const Dtype* a, Dtype* y) {
   CUDA_KERNEL_LOOP(index, n) {
     y[index] = abs(a[index]);

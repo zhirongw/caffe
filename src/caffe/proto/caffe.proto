@@ -96,7 +96,7 @@ message NetParameter {
 // NOTE
 // Update the next available ID when you add a new SolverParameter field.
 //
-// SolverParameter next available ID: 37 (last added: iter_size)
+// SolverParameter next available ID: 39 (last added: binary_growth)
 message SolverParameter {
   //////////////////////////////////////////////////////////////////////////////
   // Specifying the train and test networks
@@ -156,9 +156,13 @@ message SolverParameter {
   optional float power = 10; // The parameter to compute the learning rate.
   optional float momentum = 11; // The momentum value.
   optional float weight_decay = 12; // The weight decay.
+  optional float binary_growth = 38; // The binary growth.
   // regularization types supported: L1 and L2
   // controlled by weight_decay
   optional string regularization_type = 29 [default = "L2"];
+  // growth types for binary activations supported: LOG, L1 and L2
+  // controlled by weight_grow
+  optional string growth_type = 37 [default = "LOG"];
   // the stepsize for learning rate policy "step"
   optional int32 stepsize = 13;
   // the stepsize for learning rate policy "multistep"
@@ -264,6 +268,9 @@ message ParamSpec {
 
   // The multiplier on the global weight decay for this parameter.
   optional float decay_mult = 4 [default = 1.0];
+
+  // The multiplier on the global weight growth for binary activations.
+  optional float grow_mult = 5 [default = 0.0];
 }
 
 // NOTE

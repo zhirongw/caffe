@@ -489,6 +489,7 @@ void SGDSolver<Dtype>::ApplyUpdate() {
   for (int param_id = 0; param_id < this->net_->params().size(); ++param_id) {
     Normalize(param_id);
     Regularize(param_id);
+    Grow(param_id);
     ComputeUpdateValue(param_id, rate);
   }
   this->net_->Update();
@@ -570,6 +571,131 @@ void SGDSolver<Dtype>::Regularize(int param_id) {
             net_params[param_id]->mutable_gpu_diff());
       } else {
         LOG(FATAL) << "Unknown regularization type: " << regularization_type;
+      }
+    }
+#else
+    NO_GPU;
+#endif
+    break;
+  }
+  default:
+    LOG(FATAL) << "Unknown caffe mode: " << Caffe::mode();
+  }
+}
+
+template <typename Dtype>
+void SGDSolver<Dtype>::Grow(int param_id) {
+  const vector<shared_ptr<Blob<Dtype> > >& net_params = this->net_->params();
+  const vector<float>& net_params_binary_grow =
+      this->net_->params_binary_grow();
+  Dtype binary_grow = this->param_.binary_growth();
+  string grow_type = this->param_.growth_type();
+  Dtype local_grow = binary_grow * net_params_binary_grow[param_id];
+  switch (Caffe::mode()) {
+  case Caffe::CPU: {
+    if (local_grow) {
+      if (grow_type == "L2") {
+        // add binary grow
+        caffe_powx(net_params[param_id]->count(),
+            net_params[param_id]->cpu_data(), Dtype(3),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_inverse(net_params[param_id]->count(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_axpy(net_params[param_id]->count(),
+            -local_grow,
+            temp_[param_id]->cpu_data(),
+            net_params[param_id]->mutable_cpu_diff());
+      } else if (grow_type == "L1") {
+        caffe_cpu_sign(net_params[param_id]->count(),
+            net_params[param_id]->cpu_data(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_mul(net_params[param_id]->count(),
+            net_params[param_id]->cpu_data(),
+            temp_[param_id]->cpu_data(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_mul(net_params[param_id]->count(),
+            net_params[param_id]->cpu_data(),
+            temp_[param_id]->cpu_data(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_inverse(net_params[param_id]->count(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_axpy(net_params[param_id]->count(),
+            -local_grow,
+            temp_[param_id]->cpu_data(),
+            net_params[param_id]->mutable_cpu_diff());
+      } else if (grow_type == "LOG") {
+        caffe_cpu_sign(net_params[param_id]->count(),
+            net_params[param_id]->cpu_data(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_mul(net_params[param_id]->count(),
+            net_params[param_id]->cpu_data(),
+            temp_[param_id]->cpu_data(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_inverse(net_params[param_id]->count(),
+            temp_[param_id]->mutable_cpu_data());
+        caffe_axpy(net_params[param_id]->count(),
+            -local_grow,
+            temp_[param_id]->cpu_data(),
+            net_params[param_id]->mutable_cpu_diff());
+      } else {
+        LOG(FATAL) << "Unknown regularization type: " << grow_type;
+      }
+    }
+    break;
+  }
+  case Caffe::GPU: {
+#ifndef CPU_ONLY
+    if (local_grow) {
+      if (grow_type == "L2") {
+        // add binary grow
+        caffe_gpu_mul(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_mul(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_inverse(net_params[param_id]->count(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_axpy(net_params[param_id]->count(),
+            -local_grow,
+            temp_[param_id]->gpu_data(),
+            net_params[param_id]->mutable_gpu_diff());
+      } else if (grow_type == "L1") {
+        caffe_gpu_sign(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_mul(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_mul(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_inverse(net_params[param_id]->count(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_axpy(net_params[param_id]->count(),
+            -local_grow,
+            temp_[param_id]->gpu_data(),
+            net_params[param_id]->mutable_gpu_diff());
+      } else if (grow_type == "LOG") {
+        caffe_gpu_sign(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_mul(net_params[param_id]->count(),
+            net_params[param_id]->gpu_data(),
+            temp_[param_id]->gpu_data(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_inverse(net_params[param_id]->count(),
+            temp_[param_id]->mutable_gpu_data());
+        caffe_gpu_axpy(net_params[param_id]->count(),
+            -local_grow,
+            temp_[param_id]->gpu_data(),
+            net_params[param_id]->mutable_gpu_diff());
+      } else {
+        LOG(FATAL) << "Unknown regularization type: " << grow_type;
       }
     }
 #else

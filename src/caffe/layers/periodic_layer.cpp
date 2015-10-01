@@ -103,8 +103,8 @@ void PeriodicLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   case PeriodicParameter_PeriodicFunction_BND:
     for (int i = 0; i < count; ++i) {
       int c = (i / dim) % channels / div_factor;
-      top_data[i] = std::max(Dtype(-0.5), std::min(Dtype(0.5), 
-          bottom_data[i] * omega_data[c])) + 0.5;
+      top_data[i] = std::max(Dtype(0.0), std::min(Dtype(1.0), 
+          bottom_data[i] * omega_data[c]));
     }
     break;
   default:

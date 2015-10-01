@@ -489,6 +489,7 @@ void Net<Dtype>::GetLearningRateAndWeightDecay() {
           &layers_[i]->layer_param().param(j) : &default_param_spec;
       params_lr_.push_back(param_spec->lr_mult());
       params_weight_decay_.push_back(param_spec->decay_mult());
+      params_binary_grow_.push_back(param_spec->grow_mult());
     }
   }
 }
