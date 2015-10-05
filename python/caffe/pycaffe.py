@@ -268,6 +268,28 @@ def _Net_batch(self, blobs):
                                                  padding])
         yield padded_batch
 
+class _Net_TopNames:
+    """
+    A simple wrapper that allows the top_names propery to be accessed as an
+    array.
+    """
+    def __init__(self, net):
+        self.net = net
+    def __getitem__(self, name):
+        return self.net._top_names(list(self.net._layer_names).index(name))
+
+
+class _Net_BottomNames:
+    """
+    A simple wrapper that allows the bottom_names propery to be accessed as an
+    array.
+    """
+    def __init__(self, net):
+        self.net = net
+    def __getitem__(self, name):
+        return self.net._bottom_names(list(self.net._layer_names).index(name))
+
+
 # Attach methods to Net.
 Net.blobs = _Net_blobs
 Net.params = _Net_params
@@ -279,3 +301,5 @@ Net.set_input_arrays = _Net_set_input_arrays
 Net._batch = _Net_batch
 Net.inputs = _Net_inputs
 Net.outputs = _Net_outputs
+Net.top_names = property(_Net_TopNames)
+Net.bottom_names = property(_Net_BottomNames)

@@ -131,6 +131,22 @@ class Net {
   inline const vector<vector<Blob<Dtype>*> >& top_vecs() const {
     return top_vecs_;
   }
+  /// @brief returns the names of the top blobs of layer i
+  inline vector<string> top_names(int i) const {
+    CHECK_LT(i, top_id_vecs_.size()) << "Invalid layer id";
+    vector<string> r;
+    for (int j = 0; j < top_id_vecs_[i].size(); j++)
+      r.push_back(blob_names_[top_id_vecs_[i][j]]);
+    return r;
+  }
+  /// @brief returns the names of the bottom blobs of layer i
+  inline vector<string> bottom_names(int i) const {
+    CHECK_LT(i, bottom_id_vecs_.size()) << "Invalid layer id";
+    vector<string> r;
+    for (int j = 0; j < bottom_id_vecs_[i].size(); j++)
+      r.push_back(blob_names_[bottom_id_vecs_[i][j]]);
+    return r;
+  }
   inline const vector<vector<bool> >& bottom_need_backward() const {
     return bottom_need_backward_;
   }
