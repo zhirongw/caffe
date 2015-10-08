@@ -10,7 +10,7 @@ namespace caffe {
 shared_ptr<Caffe> Caffe::singleton_;
 
 // random seeding
-int64_t cluster_seedgen(void) {
+int64_t cluster_seedgen(bool sync) {
   int64_t s, seed, pid;
   FILE* f = fopen("/dev/urandom", "rb");
   if (f && fread(&seed, 1, sizeof(seed), f) == sizeof(seed)) {
@@ -31,12 +31,47 @@ int64_t cluster_seedgen(void) {
 
 
 void GlobalInit(int* pargc, char*** pargv) {
+
   // Google flags.
   ::gflags::ParseCommandLineFlags(pargc, pargv, true);
   // Google logging.
   ::google::InitGoogleLogging(*(pargv)[0]);
   // Provide a backtrace on segfault.
   ::google::InstallFailureSignalHandler();
+
+#ifdef USE_MPI
+  //try start MPI communication system
+  int provided_thread_support;
+  MPI_Init_thread(pargc, pargv, MPI_THREAD_MULTIPLE, &provided_thread_support);
+
+  CHECK_GE(provided_thread_support, MPI_THREAD_SERIALIZED)<<" Cannot activate MPI thread support";
+
+  Caffe::MPI_build_rank();
+
+  if (Caffe::MPI_all_rank() > 1) {
+    Caffe::set_parallel_mode(Caffe::MPI);
+    LOG(INFO)<<"Running parallel training with MPI support!";
+  }else{
+    Caffe::set_parallel_mode(Caffe::NO);
+    LOG(INFO)<<"You are running caffe compiled with MPI support. Now it's running in non-parallel model";
+  }
+
+  //disable slave processes from logging to stderr
+  //also enable logging only events above ERROR level to logfile.
+  if (Caffe::MPI_my_rank() != 0){
+    FLAGS_logtostderr = false;
+    FLAGS_minloglevel = 2;
+  }
+#endif
+
+}
+
+void GlobalFinalize(){
+  //Add something here
+
+  #ifdef USE_MPI
+  MPI_Finalize();
+  #endif
 }
 
 #ifdef CPU_ONLY  // CPU-only Caffe.
@@ -87,6 +122,7 @@ void* Caffe::RNG::generator() {
 Caffe::Caffe()
     : cublas_handle_(NULL), curand_generator_(NULL), random_generator_(),
     mode_(Caffe::CPU) {
+  #ifndef USE_MPI
   // Try to create a cublas handler, and report an error if failed (but we will
   // keep the program running as one might just want to run CPU code).
   if (cublasCreate(&cublas_handle_) != CUBLAS_STATUS_SUCCESS) {
@@ -99,6 +135,15 @@ Caffe::Caffe()
       != CURAND_STATUS_SUCCESS) {
     LOG(ERROR) << "Cannot create Curand generator. Curand won't be available.";
   }
+  #else
+  // we are not trying to create the any cuda stuff here
+  // because on exclusive mode GPUs it will cause program fail
+  // Reason: no device id assigned at this time, all processes will try to access gpu 0.
+  #endif
+
+  #ifdef USE_CUDNN
+    cudnn_mem_richness_ = 1;
+  #endif
 }
 
 Caffe::~Caffe() {
@@ -128,8 +173,9 @@ void Caffe::set_random_seed(const unsigned int seed) {
 
 void Caffe::SetDevice(const int device_id) {
   int current_device;
+  std::cout<<"Setting device "<<device_id<<"\n";
   CUDA_CHECK(cudaGetDevice(&current_device));
-  if (current_device == device_id) {
+  if (current_device == device_id && Get().cublas_handle_ && Get().curand_generator_) {
     return;
   }
   // The call to cudaSetDevice must come before any calls to Get, which
@@ -144,6 +190,9 @@ void Caffe::SetDevice(const int device_id) {
       CURAND_RNG_PSEUDO_DEFAULT));
   CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(Get().curand_generator_,
       cluster_seedgen()));
+#ifdef USE_MPI
+  Get().device_id_ = device_id;
+#endif
 }
 
 void Caffe::DeviceQuery() {

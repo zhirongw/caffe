@@ -14,6 +14,9 @@
 #include "caffe/util/math_functions.hpp"
 #include "caffe/util/upgrade_proto.hpp"
 
+#include "caffe/util/channel.hpp"
+#include "caffe/util/mpi_functions.hpp"
+
 #include "caffe/test/test_caffe_main.hpp"
 
 namespace caffe {
@@ -72,6 +75,7 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
   param_id_vecs_.resize(param.layer_size());
   top_id_vecs_.resize(param.layer_size());
   bottom_need_backward_.resize(param.layer_size());
+
   for (int layer_id = 0; layer_id < param.layer_size(); ++layer_id) {
     // Inherit phase from net if unset.
     if (!param.layer(layer_id).has_phase()) {
@@ -91,6 +95,39 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
     bool need_backward = false;
 
     // Figure out this layer's input and output
+    #ifdef USE_MPI
+    vector<bool> source_layer_need_sync;
+    for (int bottom_id = 0; bottom_id < layer_param.bottom_size();
+         ++bottom_id) {
+
+      const int blob_id = AppendBottom(param, layer_id, bottom_id,
+                                       &available_blobs, &blob_name_to_idx);
+      int src_layer_id = top_layer_indices_[blob_id].first;
+      if (src_layer_id>=0) source_layer_need_sync.push_back(layers_[src_layer_id]->need_sync());
+      if (source_layer_need_sync.size()>0){
+        CHECK_EQ(source_layer_need_sync.back(), source_layer_need_sync[0])
+          <<" blob "<<layer_param.bottom(0)
+          <<" and blob "<< layer_param.bottom(bottom_id)
+          <<" are from layers with different paralle mode. This is not supported.";
+      }
+      // If a blob needs backward, this layer should provide it.
+      need_backward |= blob_need_backward_[blob_id];
+    }
+
+    if (layers_[layer_id]->is_gathering()){
+      layers_[layer_id]->set_need_sync(false);
+    } else {
+      LOG(INFO)<<layers_[layer_id]->is_scattering();
+      if(layers_[layer_id]->is_scattering()){
+        layers_[layer_id]->set_need_sync(true);
+      } else {
+        if ((source_layer_need_sync.size() > 0)) {
+          layers_[layer_id]->set_need_sync(source_layer_need_sync[0]);
+          LOG(INFO) << "This layer is inheriting previous layer's sync mode: " << source_layer_need_sync[0];
+        }
+      }
+    }
+    #else
     for (int bottom_id = 0; bottom_id < layer_param.bottom_size();
          ++bottom_id) {
       const int blob_id = AppendBottom(param, layer_id, bottom_id,
@@ -98,6 +135,8 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
       // If a blob needs backward, this layer should provide it.
       need_backward |= blob_need_backward_[blob_id];
     }
+    #endif
+
     int num_top = layer_param.top_size();
     for (int top_id = 0; top_id < num_top; ++top_id) {
       AppendTop(param, layer_id, top_id, &available_blobs, &blob_name_to_idx);
@@ -152,6 +191,13 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
     if (need_backward) {
       for (int top_id = 0; top_id < top_id_vecs_[layer_id].size(); ++top_id) {
         blob_need_backward_[top_id_vecs_[layer_id][top_id]] = true;
+
+        //special treatment for "Gather" layer
+        //This layer should be transparent to bp inferring.
+        if (strcmp(layers_[layer_id]->type(), "Gather")==0){
+          blob_need_backward_[top_id_vecs_[layer_id][top_id]]
+              = blob_need_backward_[bottom_id_vecs_[layer_id][top_id]];
+        }
       }
     }
   }
@@ -374,6 +420,7 @@ void Net<Dtype>::AppendTop(const NetParameter& param, const int layer_id,
     blobs_.push_back(blob_pointer);
     blob_names_.push_back(blob_name);
     blob_need_backward_.push_back(false);
+    top_layer_indices_.push_back(make_pair(layer_id, blob_id));
     if (blob_name_to_idx) { (*blob_name_to_idx)[blob_name] = blob_id; }
     if (layer_id == -1) {
       // Set the (explicitly specified) dimensions of the input blob.
@@ -391,6 +438,7 @@ void Net<Dtype>::AppendTop(const NetParameter& param, const int layer_id,
       top_id_vecs_[layer_id].push_back(blob_id);
       top_vecs_[layer_id].push_back(blob_pointer.get());
     }
+
   }
   if (available_blobs) { available_blobs->insert(blob_name); }
 }
@@ -568,11 +616,47 @@ template <typename Dtype>
 void Net<Dtype>::BackwardFromTo(int start, int end) {
   CHECK_GE(end, 0);
   CHECK_LT(start, layers_.size());
+
   for (int i = start; i >= end; --i) {
     if (layer_need_backward_[i]) {
       layers_[i]->Backward(
           top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
       if (debug_info_) { BackwardDebugInfo(i); }
+
+#ifdef USE_MPI
+      if ((Caffe::parallel_mode() == Caffe::MPI) && (Caffe::remaining_sub_iter() == 0)) {
+        for (int n = 0; n < param_layer_indices_.size(); ++n) {
+          bool ready_for_sync = false;
+
+          //decide whether we need to sync the gradient of this blob
+          if ((param_layer_indices_[n].first == i)) {
+            if (param_owners_[n] == -1) {
+              ready_for_sync = true;
+            } else {
+              // this blob is a shared one, we need to make sure no more gradients will be
+              // accumulated to it before transmission
+              int owner_id = param_owners_[n];
+              ready_for_sync = true;
+              for (int m = n - 1; m >= 0; --m) {
+                if ((param_owners_[m] == owner_id) && (param_layer_indices_[m].first >= end)) {
+                  // there are still layers holding this shared blob,
+                  // not secure the do the transmission
+                  ready_for_sync = false;
+                  break;
+                }
+              }
+            }
+          }
+          //sync gradient
+          if (ready_for_sync && layers_[i]->need_sync())
+            caffe_iallreduce(
+                this->params_[n]->mutable_cpu_diff(),
+                this->params_[n]->count()
+            );
+        }
+      }
+#endif //USE_MPI
+
     }
   }
 }

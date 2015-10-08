@@ -42,6 +42,17 @@ class Layer {
           blobs_[i]->FromProto(layer_param_.blobs(i));
         }
       }
+
+      #ifdef USE_MPI
+      //If this is a gather layer, all it subsequent layer doesn't need gradient sync.
+      //We will only change itself's property here,
+      //subsequent layers will be inferred in the Net
+    if (is_gathering()){
+        set_need_sync(false);
+      }else{
+        set_need_sync(true);
+      }
+      #endif
     }
   virtual ~Layer() {}
 
@@ -285,6 +296,18 @@ class Layer {
     param_propagate_down_[param_id] = value;
   }
 
+  #ifdef USE_MPI
+  /**
+   * @brief Checks whether the layer accepts specifed parallel type
+   *
+   * If not supported, will halt the program with hints
+   */
+  inline virtual bool is_gathering() {return false;}
+  inline virtual bool is_scattering() {return false;}
+  inline bool need_sync(){return need_sync_;}
+  inline void set_need_sync(bool val){need_sync_ = val;}
+  #endif
+
 
  protected:
   /** The protobuf that stores the layer parameters */
@@ -299,6 +322,13 @@ class Layer {
   /** The vector that indicates whether each top blob has a non-zero weight in
    *  the objective function. */
   vector<Dtype> loss_;
+
+  #ifdef USE_MPI
+  /**
+   * For parallel use
+   */
+  bool need_sync_;
+  #endif
 
   /** @brief Using the CPU device, compute the layer output. */
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,

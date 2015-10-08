@@ -216,4 +216,3 @@ void BNLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 INSTANTIATE_LAYER_GPU_FUNCS(BNLayer);
 
 }  // namespace caffe
-
