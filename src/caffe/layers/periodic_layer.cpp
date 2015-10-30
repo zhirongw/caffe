@@ -104,7 +104,7 @@ void PeriodicLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     for (int i = 0; i < count; ++i) {
       int c = (i / dim) % channels / div_factor;
       top_data[i] = std::max(Dtype(0.0), std::min(Dtype(1.0), 
-          bottom_data[i] * omega_data[c]));
+          bottom_data[i] * omega_data[c] + Dtype(0.5)));
     }
     break;
   default:
@@ -152,7 +152,7 @@ void PeriodicLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
         Dtype* phase_diff = this->blobs_[1]->mutable_cpu_diff();
         if (channel_shared_) {
           Dtype d;
-          caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
+          d = caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
               multiplier_.cpu_data());
           caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), phase_diff);
         } else {
@@ -212,7 +212,7 @@ void PeriodicLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
         Dtype* phase_diff = this->blobs_[1]->mutable_cpu_diff();
         if (channel_shared_) {
           Dtype d;
-          caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
+          d = caffe_cpu_dot<Dtype>(cdim, backward_buff_.cpu_diff(),
               multiplier_.cpu_data());
           caffe_add_scalar(this->blobs_[0]->count(), Dtype(d), phase_diff);
         } else {

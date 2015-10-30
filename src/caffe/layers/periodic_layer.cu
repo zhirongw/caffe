@@ -39,7 +39,7 @@ __global__ void BndForward(const int n, const int channels, const int dim,
   CUDA_KERNEL_LOOP(index, n) {
     int c = (index / dim) % channels / div_factor;
     out[index] = max(Dtype(0.0), min(Dtype(1.0),
-        in[index] * omega_data[c]));
+        in[index] * omega_data[c] + 0.5));
   }
 }
 
