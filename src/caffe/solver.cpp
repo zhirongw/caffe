@@ -734,6 +734,7 @@ void SGDSolver<Dtype>::Grow(int param_id) {
   Dtype binary_grow = this->param_.binary_growth();
   string grow_type = this->param_.growth_type();
   Dtype local_grow = binary_grow * net_params_binary_grow[param_id];
+  local_grow *= this->param_.base_lr() / GetLearningRate();
   switch (Caffe::mode()) {
   case Caffe::CPU: {
     if (local_grow) {
