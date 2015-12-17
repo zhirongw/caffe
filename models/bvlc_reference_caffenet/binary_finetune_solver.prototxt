@@ -1,0 +1,17 @@
+net: "models/bvlc_reference_caffenet/binary_train_val.prototxt"
+test_iter: 1000
+test_interval: 1000
+base_lr: 0.000001
+lr_policy: "fixed"
+display: 20
+max_iter: 900000
+momentum: 0.9
+weight_decay: 0.0005
+binary_growth: 50
+growth_type: "LOG"
+snapshot: 10000
+snapshot_prefix: "models/bvlc_reference_caffenet/caffenet_bin"
+solver_mode: GPU
+test_initialization: false
+richness: 20
+#debug_info: true
