@@ -2,6 +2,7 @@ import numpy as np
 import skimage.io
 from scipy.ndimage import zoom
 from skimage.transform import resize
+import cv2
 
 try:
     # Python3 will most likely not be able to load protobuf
@@ -82,8 +83,12 @@ def datum_to_array(datum):
     as one can easily get it by calling datum.label.
     """
     if len(datum.data):
-        return np.fromstring(datum.data, dtype=np.uint8).reshape(
-            datum.channels, datum.height, datum.width)
+        data = np.fromstring(datum.data, dtype=np.uint8)
+        if datum.encoded:
+            data = cv2.imdecode(data, cv2.CV_LOAD_IMAGE_COLOR)
+            return data.transpose((2,0,1))
+        else:
+            return data.reshape(datum.channels, datum.height, datum.width)
     else:
         return np.array(datum.float_data).astype(float).reshape(
             datum.channels, datum.height, datum.width)
